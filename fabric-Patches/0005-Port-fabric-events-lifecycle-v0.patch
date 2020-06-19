@@ -1,0 +1,385 @@
+From 8ac07d16dd13ba9d1c957b77dd96eb9a58d5b825 Mon Sep 17 00:00:00 2001
+From: Jamie Mansfield <jmansfield@cadixdev.org>
+Date: Fri, 19 Jun 2020 17:40:39 +0100
+Subject: [PATCH] Port fabric-events-lifecycle-v0
+
+
+diff --git a/fabric-events-lifecycle-v0/build.gradle b/fabric-events-lifecycle-v0/build.gradle
+index 21bb53d..e74cc7d 100644
+--- a/fabric-events-lifecycle-v0/build.gradle
++++ b/fabric-events-lifecycle-v0/build.gradle
+@@ -2,5 +2,9 @@ archivesBaseName = "fabric-events-lifecycle-v0"
+ version = getSubprojectVersion(project, "0.1.2")
+ 
+ dependencies {
+-	compile project(path: ':fabric-api-base', configuration: 'dev')
++	compile project(path: ':fabric:fabric-api-base', configuration: 'dev')
++}
++
++mixin {
++	add sourceSets.main, "fabric-events-lifecycle-v0.refmap.json"
+ }
+diff --git a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/client/ClientTickCallback.java b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/client/ClientTickCallback.java
+index 653ed4f..ae09bf8 100644
+--- a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/client/ClientTickCallback.java
++++ b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/client/ClientTickCallback.java
+@@ -16,25 +16,24 @@
+ 
+ package net.fabricmc.fabric.api.event.client;
+ 
+-import net.minecraft.client.MinecraftClient;
+-
+ import net.fabricmc.fabric.api.event.Event;
+ import net.fabricmc.fabric.api.event.EventFactory;
++import net.minecraft.client.Minecraft;
+ 
+ public interface ClientTickCallback {
+ 	Event<ClientTickCallback> EVENT = EventFactory.createArrayBacked(ClientTickCallback.class,
+ 			(listeners) -> {
+ 				if (EventFactory.isProfilingEnabled()) {
+ 					return (client) -> {
+-						client.getProfiler().push("fabricClientTick");
++						client.getProfiler().startSection("fabricClientTick");
+ 
+ 						for (ClientTickCallback event : listeners) {
+-							client.getProfiler().push(EventFactory.getHandlerName(event));
++							client.getProfiler().func_230035_c_(EventFactory.getHandlerName(event));
+ 							event.tick(client);
+-							client.getProfiler().pop();
++							client.getProfiler().endSection();
+ 						}
+ 
+-						client.getProfiler().pop();
++						client.getProfiler().endSection();
+ 					};
+ 				} else {
+ 					return (client) -> {
+@@ -46,5 +45,5 @@ public interface ClientTickCallback {
+ 			}
+ 	);
+ 
+-	void tick(MinecraftClient client);
++	void tick(Minecraft client);
+ }
+diff --git a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/client/ItemTooltipCallback.java b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/client/ItemTooltipCallback.java
+index 7aab920..9db4532 100644
+--- a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/client/ItemTooltipCallback.java
++++ b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/client/ItemTooltipCallback.java
+@@ -16,14 +16,13 @@
+ 
+ package net.fabricmc.fabric.api.event.client;
+ 
+-import java.util.List;
+-
+-import net.minecraft.client.item.TooltipContext;
+-import net.minecraft.item.ItemStack;
+-import net.minecraft.text.Text;
+-
+ import net.fabricmc.fabric.api.event.Event;
+ import net.fabricmc.fabric.api.event.EventFactory;
++import net.minecraft.client.util.ITooltipFlag;
++import net.minecraft.item.ItemStack;
++import net.minecraft.util.text.ITextComponent;
++
++import java.util.List;
+ 
+ public interface ItemTooltipCallback {
+ 	/**
+@@ -41,5 +40,5 @@ public interface ItemTooltipCallback {
+ 	 *
+ 	 * @param lines the list containing the lines of text displayed on the stack's tooltip
+ 	 */
+-	void getTooltip(ItemStack stack, TooltipContext tooltipContext, List<Text> lines);
++	void getTooltip(ItemStack stack, ITooltipFlag tooltipContext, List<ITextComponent> lines);
+ }
+diff --git a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/server/ServerTickCallback.java b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/server/ServerTickCallback.java
+index 56a2bc7..5eec3ef 100644
+--- a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/server/ServerTickCallback.java
++++ b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/server/ServerTickCallback.java
+@@ -26,15 +26,15 @@ public interface ServerTickCallback {
+ 			(listeners) -> {
+ 				if (EventFactory.isProfilingEnabled()) {
+ 					return (server) -> {
+-						server.getProfiler().push("fabricServerTick");
++						server.getProfiler().startSection("fabricServerTick");
+ 
+ 						for (ServerTickCallback event : listeners) {
+-							server.getProfiler().push(EventFactory.getHandlerName(event));
++							server.getProfiler().func_230035_c_(EventFactory.getHandlerName(event));
+ 							event.tick(server);
+-							server.getProfiler().pop();
++							server.getProfiler().endSection();
+ 						}
+ 
+-						server.getProfiler().pop();
++						server.getProfiler().endSection();
+ 					};
+ 				} else {
+ 					return (server) -> {
+diff --git a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/world/WorldTickCallback.java b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/world/WorldTickCallback.java
+index 38cda98..28fb0ea 100644
+--- a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/world/WorldTickCallback.java
++++ b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/world/WorldTickCallback.java
+@@ -26,15 +26,15 @@ public interface WorldTickCallback {
+ 			(listeners) -> {
+ 				if (EventFactory.isProfilingEnabled()) {
+ 					return (world) -> {
+-						world.getProfiler().push("fabricWorldTick");
++						world.getProfiler().startSection("fabricWorldTick");
+ 
+ 						for (WorldTickCallback event : listeners) {
+-							world.getProfiler().push(EventFactory.getHandlerName(event));
++							world.getProfiler().func_230035_c_(EventFactory.getHandlerName(event));
+ 							event.tick(world);
+-							world.getProfiler().pop();
++							world.getProfiler().endSection();
+ 						}
+ 
+-						world.getProfiler().pop();
++						world.getProfiler().endSection();
+ 					};
+ 				} else {
+ 					return (world) -> {
+diff --git a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/impl/event/EventLifecycleClientMod.java b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/impl/event/EventLifecycleClientMod.java
+new file mode 100644
+index 0000000..760e491
+--- /dev/null
++++ b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/impl/event/EventLifecycleClientMod.java
+@@ -0,0 +1,41 @@
++/*
++ * Copyright (c) 2016, 2017, 2018, 2019 FabricMC
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package net.fabricmc.fabric.impl.event;
++
++import net.fabricmc.api.ClientModInitializer;
++import net.fabricmc.fabric.api.event.client.ItemTooltipCallback;
++import net.minecraftforge.common.MinecraftForge;
++import net.minecraftforge.event.entity.player.ItemTooltipEvent;
++import net.minecraftforge.eventbus.api.SubscribeEvent;
++
++public class EventLifecycleClientMod implements ClientModInitializer {
++
++	@Override
++	public void onInitializeClient() {
++		MinecraftForge.EVENT_BUS.register(this);
++	}
++
++	@SubscribeEvent
++	public void onTooltip(final ItemTooltipEvent event) {
++		ItemTooltipCallback.EVENT.invoker().getTooltip(
++				event.getItemStack(),
++				event.getFlags(),
++				event.getToolTip()
++		);
++	}
++
++}
+diff --git a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/impl/event/EventLifecycleMod.java b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/impl/event/EventLifecycleMod.java
+new file mode 100644
+index 0000000..1bbfe3f
+--- /dev/null
++++ b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/impl/event/EventLifecycleMod.java
+@@ -0,0 +1,44 @@
++/*
++ * Copyright (c) 2016, 2017, 2018, 2019 FabricMC
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package net.fabricmc.fabric.impl.event;
++
++import net.fabricmc.api.ModInitializer;
++import net.fabricmc.fabric.api.event.server.ServerStartCallback;
++import net.fabricmc.fabric.api.event.server.ServerStopCallback;
++import net.minecraftforge.common.MinecraftForge;
++import net.minecraftforge.eventbus.api.SubscribeEvent;
++import net.minecraftforge.fml.event.server.FMLServerStartingEvent;
++import net.minecraftforge.fml.event.server.FMLServerStoppingEvent;
++
++public class EventLifecycleMod implements ModInitializer {
++
++	@Override
++	public void onInitialize() {
++		MinecraftForge.EVENT_BUS.register(this);
++	}
++
++	@SubscribeEvent
++	public void onServerStarting(final FMLServerStartingEvent event) {
++		ServerStartCallback.EVENT.invoker().onStartServer(event.getServer());
++	}
++
++	@SubscribeEvent
++	public void onServerStopping(final FMLServerStoppingEvent event) {
++		ServerStopCallback.EVENT.invoker().onStopServer(event.getServer());
++	}
++
++}
+diff --git a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinItemStack.java b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinItemStack.java
+deleted file mode 100644
+index c6f0250..0000000
+--- a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinItemStack.java
++++ /dev/null
+@@ -1,39 +0,0 @@
+-/*
+- * Copyright (c) 2016, 2017, 2018, 2019 FabricMC
+- *
+- * Licensed under the Apache License, Version 2.0 (the "License");
+- * you may not use this file except in compliance with the License.
+- * You may obtain a copy of the License at
+- *
+- *     http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-
+-package net.fabricmc.fabric.mixin.event.lifecycle;
+-
+-import java.util.List;
+-
+-import org.spongepowered.asm.mixin.Mixin;
+-import org.spongepowered.asm.mixin.injection.At;
+-import org.spongepowered.asm.mixin.injection.Inject;
+-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+-
+-import net.minecraft.client.item.TooltipContext;
+-import net.minecraft.entity.player.PlayerEntity;
+-import net.minecraft.item.ItemStack;
+-import net.minecraft.text.Text;
+-
+-import net.fabricmc.fabric.api.event.client.ItemTooltipCallback;
+-
+-@Mixin(ItemStack.class)
+-public class MixinItemStack {
+-	@Inject(method = "getTooltip", at = @At("RETURN"))
+-	private void getTooltip(PlayerEntity entity, TooltipContext tooltipContext, CallbackInfoReturnable<List<Text>> info) {
+-		ItemTooltipCallback.EVENT.invoker().getTooltip((ItemStack) (Object) this, tooltipContext, info.getReturnValue());
+-	}
+-}
+diff --git a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinMinecraftClient.java b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinMinecraftClient.java
+index a34368a..290749f 100644
+--- a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinMinecraftClient.java
++++ b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinMinecraftClient.java
+@@ -16,19 +16,18 @@
+ 
+ package net.fabricmc.fabric.mixin.event.lifecycle;
+ 
++import net.minecraft.client.Minecraft;
+ import org.spongepowered.asm.mixin.Mixin;
+ import org.spongepowered.asm.mixin.injection.At;
+ import org.spongepowered.asm.mixin.injection.Inject;
+ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+ 
+-import net.minecraft.client.MinecraftClient;
+-
+ import net.fabricmc.fabric.api.event.client.ClientTickCallback;
+ 
+-@Mixin(MinecraftClient.class)
++@Mixin(Minecraft.class)
+ public class MixinMinecraftClient {
+-	@Inject(at = @At("RETURN"), method = "tick")
++	@Inject(at = @At("RETURN"), method = "runTick")
+ 	public void tick(CallbackInfo info) {
+-		ClientTickCallback.EVENT.invoker().tick((MinecraftClient) (Object) this);
++		ClientTickCallback.EVENT.invoker().tick((Minecraft) (Object) this);
+ 	}
+ }
+diff --git a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinMinecraftServer.java b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinMinecraftServer.java
+index b531bf3..d98b397 100644
+--- a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinMinecraftServer.java
++++ b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/mixin/event/lifecycle/MixinMinecraftServer.java
+@@ -16,31 +16,17 @@
+ 
+ package net.fabricmc.fabric.mixin.event.lifecycle;
+ 
+-import java.util.function.BooleanSupplier;
+-
++import net.fabricmc.fabric.api.event.server.ServerTickCallback;
++import net.minecraft.server.MinecraftServer;
+ import org.spongepowered.asm.mixin.Mixin;
+ import org.spongepowered.asm.mixin.injection.At;
+ import org.spongepowered.asm.mixin.injection.Inject;
+ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+ 
+-import net.minecraft.server.MinecraftServer;
+-
+-import net.fabricmc.fabric.api.event.server.ServerStartCallback;
+-import net.fabricmc.fabric.api.event.server.ServerStopCallback;
+-import net.fabricmc.fabric.api.event.server.ServerTickCallback;
++import java.util.function.BooleanSupplier;
+ 
+ @Mixin(MinecraftServer.class)
+ public class MixinMinecraftServer {
+-	@Inject(at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;setFavicon(Lnet/minecraft/server/ServerMetadata;)V", ordinal = 0), method = "run")
+-	public void afterSetupServer(CallbackInfo info) {
+-		ServerStartCallback.EVENT.invoker().onStartServer((MinecraftServer) (Object) this);
+-	}
+-
+-	@Inject(at = @At("HEAD"), method = "shutdown")
+-	public void beforeShutdownServer(CallbackInfo info) {
+-		ServerStopCallback.EVENT.invoker().onStopServer((MinecraftServer) (Object) this);
+-	}
+-
+ 	@Inject(at = @At("RETURN"), method = "tick")
+ 	protected void tick(BooleanSupplier var1, CallbackInfo info) {
+ 		ServerTickCallback.EVENT.invoker().tick((MinecraftServer) (Object) this);
+diff --git a/fabric-events-lifecycle-v0/src/main/resources/fabric-events-lifecycle-v0.mixins.json b/fabric-events-lifecycle-v0/src/main/resources/fabric-events-lifecycle-v0.mixins.json
+index 738bbd9..433af76 100644
+--- a/fabric-events-lifecycle-v0/src/main/resources/fabric-events-lifecycle-v0.mixins.json
++++ b/fabric-events-lifecycle-v0/src/main/resources/fabric-events-lifecycle-v0.mixins.json
+@@ -7,7 +7,6 @@
+     "MixinWorld"
+   ],
+   "client": [
+-    "MixinItemStack",
+     "MixinMinecraftClient"
+   ],
+   "injectors": {
+diff --git a/fabric-events-lifecycle-v0/src/main/resources/fabric.mod.json b/fabric-events-lifecycle-v0/src/main/resources/fabric.mod.json
+index c6639d0..209506c 100644
+--- a/fabric-events-lifecycle-v0/src/main/resources/fabric.mod.json
++++ b/fabric-events-lifecycle-v0/src/main/resources/fabric.mod.json
+@@ -22,5 +22,13 @@
+   "description": "Events for the game's lifecycle.",
+   "mixins": [
+     "fabric-events-lifecycle-v0.mixins.json"
+-  ]
++  ],
++  "entrypoints": {
++    "main": [
++      "net.fabricmc.fabric.impl.event.EventLifecycleMod"
++    ],
++    "client": [
++      "net.fabricmc.fabric.impl.event.EventLifecycleClientMod"
++    ]
++  }
+ }
+-- 
+2.26.2
+

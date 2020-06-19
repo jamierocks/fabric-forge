@@ -1,0 +1,6 @@
+[submodule "upstream/fabric-loader"]
+	path = upstream/fabric-loader
+	url = https://github.com/FabricMC/fabric-loader.git
+[submodule "upstream/fabric"]
+	path = upstream/fabric
+	url = https://github.com/FabricMC/fabric.git

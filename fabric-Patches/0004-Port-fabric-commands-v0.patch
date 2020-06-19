@@ -1,0 +1,52 @@
+From 4d882059efcd519a561dc19e0e96bd45b2af1c63 Mon Sep 17 00:00:00 2001
+From: Jamie Mansfield <jmansfield@cadixdev.org>
+Date: Wed, 17 Jun 2020 13:50:52 +0100
+Subject: [PATCH] Port fabric-commands-v0
+
+
+diff --git a/fabric-commands-v0/build.gradle b/fabric-commands-v0/build.gradle
+index a2b01b7..35b6978 100644
+--- a/fabric-commands-v0/build.gradle
++++ b/fabric-commands-v0/build.gradle
+@@ -2,6 +2,6 @@ archivesBaseName = "fabric-commands-v0"
+ version = getSubprojectVersion(project, "0.2.0")
+ 
+ dependencies {
+-	compile project(path: ':fabric-api-base', configuration: 'dev')
+-	compile project(path: ':fabric-command-api-v1', configuration: 'dev')
++	compile project(path: ':fabric:fabric-api-base', configuration: 'dev')
++	compile project(path: ':fabric:fabric-command-api-v1', configuration: 'dev')
+ }
+diff --git a/fabric-commands-v0/src/main/java/net/fabricmc/fabric/api/registry/CommandRegistry.java b/fabric-commands-v0/src/main/java/net/fabricmc/fabric/api/registry/CommandRegistry.java
+index f8c5826..9b9db90 100644
+--- a/fabric-commands-v0/src/main/java/net/fabricmc/fabric/api/registry/CommandRegistry.java
++++ b/fabric-commands-v0/src/main/java/net/fabricmc/fabric/api/registry/CommandRegistry.java
+@@ -16,13 +16,11 @@
+ 
+ package net.fabricmc.fabric.api.registry;
+ 
+-import java.util.function.Consumer;
+-
+ import com.mojang.brigadier.CommandDispatcher;
+-
+-import net.minecraft.server.command.ServerCommandSource;
+-
+ import net.fabricmc.fabric.api.command.v1.CommandRegistrationCallback;
++import net.minecraft.command.CommandSource;
++
++import java.util.function.Consumer;
+ 
+ /**
+  * @deprecated Please migrate to v1. Please use {@link CommandRegistrationCallback} instead.
+@@ -37,7 +35,7 @@ public class CommandRegistry {
+ 	 * @param dedicated If true, the command is only registered on the dedicated server.
+ 	 * @param consumer  The command provider, consuming {@link CommandDispatcher}.
+ 	 */
+-	public void register(boolean dedicated, Consumer<CommandDispatcher<ServerCommandSource>> consumer) {
++	public void register(boolean dedicated, Consumer<CommandDispatcher<CommandSource>> consumer) {
+ 		CommandRegistrationCallback.EVENT.register(((dispatcher, isDedicated) -> {
+ 			if (dedicated && !isDedicated) {
+ 				return;
+-- 
+2.26.2
+

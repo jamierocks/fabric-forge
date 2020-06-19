@@ -1,0 +1,42 @@
+buildscript {
+    repositories {
+        maven {
+            url 'https://plugins.gradle.org/m2/'
+        }
+    }
+    dependencies {
+        classpath 'gradle.plugin.net.minecrell:gitpatcher:0.9.0'
+    }
+}
+
+import net.minecrell.gitpatcher.task.FindGitTask
+import net.minecrell.gitpatcher.task.UpdateSubmodulesTask
+import net.minecrell.gitpatcher.task.patch.ApplyPatchesTask
+import net.minecrell.gitpatcher.task.patch.MakePatchesTask
+
+tasks.register('findApiGit', FindGitTask) {
+    it.submodule = 'upstream' + File.separator + 'fabric'
+}
+tasks.register('updateApiSubmodules', UpdateSubmodulesTask) {
+    it.dependsOn('findApiGit')
+
+    it.repo = projectDir
+    it.submodule = 'upstream' + File.separator + 'fabric'
+}
+tasks.register('applyApiPatches', ApplyPatchesTask) {
+    it.dependsOn('findApiGit')
+    it.updateTask = tasks.updateApiSubmodules as UpdateSubmodulesTask
+
+    it.root = projectDir
+    it.submodule = 'upstream' + File.separator + 'fabric'
+    it.repo = file('fabric')
+    it.patchDir = file('fabric-Patches')
+}
+tasks.register('makeApiPatches', MakePatchesTask) {
+    it.dependsOn('findApiGit')
+
+    it.root = projectDir
+    it.submodule = 'upstream' + File.separator + 'fabric'
+    it.repo = file('fabric')
+    it.patchDir = file('fabric-Patches')
+}

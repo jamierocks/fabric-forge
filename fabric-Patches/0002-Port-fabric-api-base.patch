@@ -1,0 +1,44 @@
+From cd56fbe80ac03cecf189dddbd2c57e1656916d6c Mon Sep 17 00:00:00 2001
+From: Jamie Mansfield <jmansfield@cadixdev.org>
+Date: Wed, 17 Jun 2020 13:19:01 +0100
+Subject: [PATCH] Port fabric-api-base
+
+
+diff --git a/fabric-api-base/src/main/java/net/fabricmc/fabric/api/util/NbtType.java b/fabric-api-base/src/main/java/net/fabricmc/fabric/api/util/NbtType.java
+index 1329371..f0897d1 100644
+--- a/fabric-api-base/src/main/java/net/fabricmc/fabric/api/util/NbtType.java
++++ b/fabric-api-base/src/main/java/net/fabricmc/fabric/api/util/NbtType.java
+@@ -16,16 +16,16 @@
+ 
+ package net.fabricmc.fabric.api.util;
+ 
+-import net.minecraft.nbt.CompoundTag;
+-import net.minecraft.nbt.Tag;
++import net.minecraft.nbt.CompoundNBT;
++import net.minecraft.nbt.NBTTypes;
+ 
+ /**
+  * NBT type ID constants. Useful for filtering by value type in a few cases.
+  *
+- * <p>For the current list of types, check with {@link Tag#TYPES}.
++ * <p>For the current list of types, check with {@link NBTTypes}.
+  *
+- * @see CompoundTag#containsKey(String, int)
+- * @see Tag#idToString(int)
++ * @see CompoundNBT#contains(String, int)
++ * @see NBTTypes#func_229710_a_(int)
+  */
+ public final class NbtType {
+ 	public static final int END = 0;
+@@ -45,7 +45,7 @@ public final class NbtType {
+ 	/**
+ 	 * Any numeric value: byte, short, int, long, float, double.
+ 	 *
+-	 * @see CompoundTag#containsKey(String, int)
++	 * @see CompoundNBT#contains(String, int)
+ 	 */
+ 	public static final int NUMBER = 99;
+ 
+-- 
+2.26.2
+

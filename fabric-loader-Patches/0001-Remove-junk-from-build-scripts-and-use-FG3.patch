@@ -1,0 +1,236 @@
+From 6c1c6bf74a8593bf1a60c33d0c72056a61bc06d1 Mon Sep 17 00:00:00 2001
+From: Jamie Mansfield <jmansfield@cadixdev.org>
+Date: Fri, 19 Jun 2020 21:36:28 +0100
+Subject: [PATCH] Remove junk from build scripts, and use FG3
+
+
+diff --git a/build.gradle b/build.gradle
+index 19d2d42..34295a7 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -1,6 +1,14 @@
+-import com.google.gson.Gson
+-import com.google.gson.JsonElement
+-import com.google.gson.JsonObject
++buildscript {
++	repositories {
++		mavenCentral()
++		maven {
++			url = 'https://files.minecraftforge.net/maven'
++		}
++	}
++	dependencies {
++		classpath 'net.minecraftforge.gradle:ForgeGradle:3.0.175'
++	}
++}
+ 
+ plugins {
+ 	id 'java'
+@@ -8,9 +16,10 @@ plugins {
+ 
+ 	id 'idea'
+ 	id 'eclipse'
+-	id("fabric-loom") version "0.2.7-SNAPSHOT"
+ }
+ 
++apply plugin: 'net.minecraftforge.gradle'
++
+ sourceCompatibility = 1.8
+ targetCompatibility = 1.8
+ 
+@@ -37,9 +46,34 @@ repositories {
+ 	}
+ }
+ 
++minecraft {
++	mappings channel: 'snapshot', version: '20200514-1.15.1'
++
++	runs {
++		client {
++			workingDirectory rootProject.file('run')
++
++			// Recommended logging data for a userdev environment
++			property 'forge.logging.markers', 'SCAN,REGISTRIES,REGISTRYDUMP'
++
++			// Recommended logging level for the console
++			property 'forge.logging.console.level', 'debug'
++		}
++
++		server {
++			workingDirectory rootProject.file('run')
++
++			// Recommended logging data for a userdev environment
++			property 'forge.logging.markers', 'SCAN,REGISTRIES,REGISTRYDUMP'
++
++			// Recommended logging level for the console
++			property 'forge.logging.console.level', 'debug'
++		}
++	}
++}
++
+ dependencies {
+-	minecraft "com.mojang:minecraft:1.14.4"
+-	mappings "net.fabricmc:yarn:1.14.4+build.1"
++	minecraft 'net.minecraftforge:forge:1.15.2-31.2.9'
+ 
+ 	// Minecraft's JAR uses these annotations
+ 	compile 'com.google.code.findbugs:jsr305:3.0.2'
+@@ -88,81 +122,3 @@ jar {
+ 		)
+ 	}
+ }
+-
+-task copyJson(type: Copy, dependsOn: ["remapJar"]) {
+-	from('src/main/resources/fabric-installer.json') {
+-		rename { "${archivesBaseName}-${version}.json" }
+-	}
+-	into 'build/libs'
+-}
+-
+-task copyJsonLw(type: Copy, dependsOn: ["remapJar"]) {
+-	from('src/main/resources/fabric-installer.launchwrapper.json') {
+-		rename { "${archivesBaseName}-${version}.launchwrapper.json" }
+-	}
+-	into 'build/libs'
+-}
+-
+-tasks.build.dependsOn "copyJson"
+-tasks.build.dependsOn "copyJsonLw"
+-
+-String getClasspathEntries(){
+-	String classPath = ""
+-	File installerFile = file("src/main/resources/fabric-installer.json")
+-	JsonObject object = Gson.newInstance().fromJson(new InputStreamReader(new FileInputStream(installerFile)), JsonObject.class)
+-
+-	["common", "server"].forEach { l ->
+-		for (JsonElement element : object.getAsJsonObject("libraries").getAsJsonArray(l)) {
+-			String dep = element.getAsJsonObject().get("name").getAsString()
+-			String[] depSplit = dep.split(":")
+-			if (depSplit.length != 3) throw new RuntimeException("Invalid dependency " + dep);
+-			classPath = classPath + " libs/" + depSplit[1] + "-" + depSplit[2] + ".jar"
+-		}
+-	}
+-
+-	return classPath;
+-}
+-
+-// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+-// if it is present.
+-// If you remove this task, sources will not be generated.
+-task sourcesJar(type: Jar, dependsOn: classes) {
+-	classifier = 'sources'
+-	from sourceSets.main.allSource
+-}
+-
+-publishing {
+-	publications {
+-		mavenJava(MavenPublication) {
+-			// add all the jars that should be included when publishing to maven
+-			artifact(file("${project.buildDir}/libs/$archivesBaseName-${version}.jar")) {
+-				builtBy remapJar
+-			}
+-			artifact(sourcesJar) {
+-				builtBy remapSourcesJar
+-			}
+-			artifact(file('src/main/resources/fabric-installer.json')) {
+-				builtBy remapJar
+-			}
+-			artifact(file('src/main/resources/fabric-installer.launchwrapper.json')) {
+-				builtBy remapJar
+-				classifier = "launchwrapper"
+-			}
+-		}
+-	}
+-
+-	// select the repositories you want to publish to
+-	repositories {
+-		if (project.hasProperty('mavenPass')) {
+-			maven {
+-				url = "http://mavenupload.modmuss50.me/"
+-				credentials {
+-					username = "buildslave"
+-					password = project.getProperty('mavenPass')
+-				}
+-			}
+-		}
+-	}
+-}
+-apply from: 'https://github.com/FabricMC/fabric-docs/raw/master/gradle/license.gradle'
+-apply from: 'https://github.com/FabricMC/fabric-docs/raw/master/gradle/ideconfig.gradle'
+diff --git a/src/main/java/net/fabricmc/loader/launch/common/FabricLauncherBase.java b/src/main/java/net/fabricmc/loader/launch/common/FabricLauncherBase.java
+index 9469a07..3b606dc 100644
+--- a/src/main/java/net/fabricmc/loader/launch/common/FabricLauncherBase.java
++++ b/src/main/java/net/fabricmc/loader/launch/common/FabricLauncherBase.java
+@@ -258,6 +258,11 @@ public abstract class FabricLauncherBase implements FabricLauncher {
+ 	}
+ 
+ 	public static Map<String, Object> getProperties() {
++		// fabric-forge: START - hacky
++		if (properties == null) {
++			properties = new HashMap<>();
++		}
++
+ 		return properties;
+ 	}
+ 
+diff --git a/src/main/resources/META-INF/services/org.spongepowered.asm.service.IGlobalPropertyService b/src/main/resources/META-INF/services/org.spongepowered.asm.service.IGlobalPropertyService
+deleted file mode 100644
+index 8e1d79d..0000000
+--- a/src/main/resources/META-INF/services/org.spongepowered.asm.service.IGlobalPropertyService
++++ /dev/null
+@@ -1 +0,0 @@
+-net.fabricmc.loader.launch.knot.FabricGlobalPropertyService
+\ No newline at end of file
+diff --git a/src/main/resources/META-INF/services/org.spongepowered.asm.service.IMixinService b/src/main/resources/META-INF/services/org.spongepowered.asm.service.IMixinService
+deleted file mode 100644
+index 5af5643..0000000
+--- a/src/main/resources/META-INF/services/org.spongepowered.asm.service.IMixinService
++++ /dev/null
+@@ -1 +0,0 @@
+-net.fabricmc.loader.launch.knot.MixinServiceKnot
+\ No newline at end of file
+diff --git a/src/main/resources/META-INF/services/org.spongepowered.asm.service.IMixinServiceBootstrap b/src/main/resources/META-INF/services/org.spongepowered.asm.service.IMixinServiceBootstrap
+deleted file mode 100644
+index 7bd3aaa..0000000
+--- a/src/main/resources/META-INF/services/org.spongepowered.asm.service.IMixinServiceBootstrap
++++ /dev/null
+@@ -1 +0,0 @@
+-net.fabricmc.loader.launch.knot.MixinServiceKnotBootstrap
+\ No newline at end of file
+diff --git a/src/test/java/net/fabricmc/test/mixin/MixinGuiMain.java b/src/test/java/net/fabricmc/test/mixin/MixinGuiMain.java
+index 0a8126d..593019a 100644
+--- a/src/test/java/net/fabricmc/test/mixin/MixinGuiMain.java
++++ b/src/test/java/net/fabricmc/test/mixin/MixinGuiMain.java
+@@ -16,24 +16,24 @@
+ 
+ package net.fabricmc.test.mixin;
+ 
++import net.minecraft.client.gui.screen.MainMenuScreen;
+ import net.minecraft.client.gui.screen.Screen;
+-import net.minecraft.client.gui.screen.TitleScreen;
+-import net.minecraft.text.Text;
++import net.minecraft.util.text.TextComponent;
+ import org.spongepowered.asm.mixin.Mixin;
+ import org.spongepowered.asm.mixin.injection.At;
+ import org.spongepowered.asm.mixin.injection.Inject;
+ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+ 
+-@Mixin(value = TitleScreen.class, remap = false)
++@Mixin(value = MainMenuScreen.class, remap = false)
+ public abstract class MixinGuiMain extends Screen {
+ 
+-	protected MixinGuiMain(Text textComponent_1) {
++	protected MixinGuiMain(TextComponent textComponent_1) {
+ 		super(textComponent_1);
+ 	}
+ 
+ 	@Inject(method = "render(IIF)V", at = @At("RETURN"))
+ 	public void render(int mouseX, int mouseY, float delta, CallbackInfo info) {
+-		this.font.draw("Fabric Test Mod", 2, this.height - 30, -1);
++		this.font.drawString("Fabric Test Mod", 2, this.height - 30, -1);
+ 	}
+ 
+ }
+-- 
+2.26.2
+

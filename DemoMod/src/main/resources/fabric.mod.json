@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "demo",
+  "name": "Demo Mod",
+  "version": "0.1.0",
+  "description": "This is a demonstration mod to test fabric-forge.",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "me.jamiemansfield.fabric.demo.DemoMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.7.4",
+    "minecraft": "1.15.x"
+  }
+}

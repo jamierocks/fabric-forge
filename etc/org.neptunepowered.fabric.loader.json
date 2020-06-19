@@ -1,0 +1,73 @@
+{
+    "formatVersion": 1,
+    "name": "Fabric FML",
+    "uid": "org.neptunepowered.fabric.loader",
+    "version": "1",
+    "+libraries": [
+      {
+        "name": "net.fabricmc:tiny-mappings-parser:0.2.2.14",
+        "url": "https://maven.fabricmc.net/"
+      },
+      {
+        "name": "net.fabricmc:sponge-mixin:0.8+build.18",
+        "url": "https://maven.fabricmc.net/"
+      },
+      {
+        "name": "net.fabricmc:tiny-remapper:0.2.2.64",
+        "url": "https://maven.fabricmc.net/"
+      },
+      {
+        "name": "net.fabricmc:fabric-loader-sat4j:2.3.5.4",
+        "url": "https://maven.fabricmc.net/"
+      },
+      {
+        "name": "com.google.jimfs:jimfs:1.1",
+        "url": "https://maven.fabricmc.net/"
+      },
+      {
+        "name": "org.ow2.asm:asm:8.0",
+        "url": "https://maven.fabricmc.net/"
+      },
+      {
+        "name": "org.ow2.asm:asm-analysis:8.0",
+        "url": "https://maven.fabricmc.net/"
+      },
+      {
+        "name": "org.ow2.asm:asm-commons:8.0",
+        "url": "https://maven.fabricmc.net/"
+      },
+      {
+        "name": "org.ow2.asm:asm-tree:8.0",
+        "url": "https://maven.fabricmc.net/"
+      },
+      {
+        "name": "org.ow2.asm:asm-util:8.0",
+        "url": "https://maven.fabricmc.net/"
+      },
+      {
+      	"name": "net.fabricmc:fabric-loader:0.8.7",
+        "MMC-hint": "local",
+        "MMC-filename": "fabric-loader-0.8.7+local.jar"
+      },
+      {
+        "name": "org.cadixdev:bombe:0.3.2",
+        "url": "https://repo1.maven.org/maven2/"
+      },
+      {
+        "name": "org.cadixdev:bombe-asm:0.3.2",
+        "url": "https://repo1.maven.org/maven2/"
+      },
+      {
+        "name": "org.cadixdev:lorenz:0.5.2",
+        "url": "https://repo1.maven.org/maven2/"
+      },
+      {
+        "name": "org.cadixdev:lorenz-asm:0.5.2",
+        "url": "https://repo1.maven.org/maven2/"
+      },
+      {
+        "name": "org.cadixdev:atlas:0.2.0",
+        "url": "https://repo1.maven.org/maven2/"
+      }
+    ]
+}

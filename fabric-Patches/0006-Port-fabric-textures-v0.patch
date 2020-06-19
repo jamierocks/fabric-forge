@@ -1,0 +1,347 @@
+From 6cedd077015b782f8c26391c399699db52580bbf Mon Sep 17 00:00:00 2001
+From: Jamie Mansfield <jmansfield@cadixdev.org>
+Date: Fri, 19 Jun 2020 18:57:13 +0100
+Subject: [PATCH] Port fabric-textures-v0
+
+
+diff --git a/fabric-textures-v0/build.gradle b/fabric-textures-v0/build.gradle
+index 19083d3..908ddcb 100644
+--- a/fabric-textures-v0/build.gradle
++++ b/fabric-textures-v0/build.gradle
+@@ -2,5 +2,9 @@ archivesBaseName = "fabric-textures-v0"
+ version = getSubprojectVersion(project, "1.0.4")
+ 
+ dependencies {
+-	compile project(path: ':fabric-api-base', configuration: 'dev')
++	compile project(path: ':fabric:fabric-api-base', configuration: 'dev')
++}
++
++mixin {
++	add sourceSets.main, "fabric-textures-v0.refmap.json"
+ }
+diff --git a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/api/client/texture/DependentSprite.java b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/api/client/texture/DependentSprite.java
+index 3f1b7a7..afc052c 100644
+--- a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/api/client/texture/DependentSprite.java
++++ b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/api/client/texture/DependentSprite.java
+@@ -16,9 +16,9 @@
+ 
+ package net.fabricmc.fabric.api.client.texture;
+ 
+-import java.util.Set;
++import net.minecraft.util.ResourceLocation;
+ 
+-import net.minecraft.util.Identifier;
++import java.util.Set;
+ 
+ /**
+  * Implement this interface on a Sprite to declare additional dependencies
+@@ -30,5 +30,5 @@ public interface DependentSprite {
+ 	/**
+ 	 * @return A set of all sprites that should be loaded before this sprite.
+ 	 */
+-	Set<Identifier> getDependencies();
++	Set<ResourceLocation> getDependencies();
+ }
+diff --git a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/api/event/client/ClientSpriteRegistryCallback.java b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/api/event/client/ClientSpriteRegistryCallback.java
+index f622de3..ebd8534 100644
+--- a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/api/event/client/ClientSpriteRegistryCallback.java
++++ b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/api/event/client/ClientSpriteRegistryCallback.java
+@@ -16,25 +16,24 @@
+ 
+ package net.fabricmc.fabric.api.event.client;
+ 
+-import java.util.Map;
+-import java.util.function.Consumer;
+-
+-import net.minecraft.client.texture.Sprite;
+-import net.minecraft.client.texture.SpriteAtlasTexture;
+-import net.minecraft.util.Identifier;
+-
+ import net.fabricmc.fabric.api.event.Event;
+ import net.fabricmc.fabric.impl.client.texture.SpriteRegistryCallbackHolder;
++import net.minecraft.client.renderer.texture.AtlasTexture;
++import net.minecraft.client.renderer.texture.TextureAtlasSprite;
++import net.minecraft.util.ResourceLocation;
++
++import java.util.Map;
++import java.util.function.Consumer;
+ 
+ public interface ClientSpriteRegistryCallback {
+ 	/**
+-	 * @deprecated Use the {@link ClientSpriteRegistryCallback#event(Identifier)} registration method. Since 1.14
++	 * @deprecated Use the {@link ClientSpriteRegistryCallback#event(ResourceLocation)} registration method. Since 1.14
+ 	 * started making use of multiple sprite atlases, it is unwise to register sprites to *all* of them.
+ 	 */
+ 	@Deprecated
+ 	Event<ClientSpriteRegistryCallback> EVENT = SpriteRegistryCallbackHolder.EVENT_GLOBAL;
+ 
+-	void registerSprites(SpriteAtlasTexture atlasTexture, Registry registry);
++	void registerSprites(AtlasTexture atlasTexture, Registry registry);
+ 
+ 	/**
+ 	 * Get an event instance for a given atlas path.
+@@ -44,23 +43,23 @@ public interface ClientSpriteRegistryCallback {
+ 	 *
+ 	 * @since 0.1.1
+ 	 */
+-	static Event<ClientSpriteRegistryCallback> event(Identifier atlasId) {
++	static Event<ClientSpriteRegistryCallback> event(ResourceLocation atlasId) {
+ 		return SpriteRegistryCallbackHolder.eventLocal(atlasId);
+ 	}
+ 
+ 	/**
+-	 * @deprecated Use the {@link ClientSpriteRegistryCallback#event(Identifier)} registration method.
++	 * @deprecated Use the {@link ClientSpriteRegistryCallback#event(ResourceLocation)} registration method.
+ 	 */
+ 	@Deprecated
+ 	static void registerBlockAtlas(ClientSpriteRegistryCallback callback) {
+-		event(SpriteAtlasTexture.BLOCK_ATLAS_TEX).register(callback);
++		event(AtlasTexture.LOCATION_BLOCKS_TEXTURE).register(callback);
+ 	}
+ 
+ 	class Registry {
+-		private final Map<Identifier, Sprite> spriteMap;
+-		private final Consumer<Identifier> defaultSpriteRegister;
++		private final Map<ResourceLocation, TextureAtlasSprite> spriteMap;
++		private final Consumer<ResourceLocation> defaultSpriteRegister;
+ 
+-		public Registry(Map<Identifier, Sprite> spriteMap, Consumer<Identifier> defaultSpriteRegister) {
++		public Registry(Map<ResourceLocation, TextureAtlasSprite> spriteMap, Consumer<ResourceLocation> defaultSpriteRegister) {
+ 			this.spriteMap = spriteMap;
+ 			this.defaultSpriteRegister = defaultSpriteRegister;
+ 		}
+@@ -70,7 +69,7 @@ public interface ClientSpriteRegistryCallback {
+ 		 *
+ 		 * @param id The sprite identifier.
+ 		 */
+-		public void register(Identifier id) {
++		public void register(ResourceLocation id) {
+ 			this.defaultSpriteRegister.accept(id);
+ 		}
+ 
+@@ -79,8 +78,8 @@ public interface ClientSpriteRegistryCallback {
+ 		 *
+ 		 * @param sprite The sprite to be added.
+ 		 */
+-		public void register(Sprite sprite) {
+-			spriteMap.put(sprite.getId(), sprite);
++		public void register(TextureAtlasSprite sprite) {
++			spriteMap.put(sprite.getName(), sprite);
+ 		}
+ 	}
+ }
+diff --git a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/impl/client/texture/FabricSprite.java b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/impl/client/texture/FabricSprite.java
+index 33aba54..2cf8300 100644
+--- a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/impl/client/texture/FabricSprite.java
++++ b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/impl/client/texture/FabricSprite.java
+@@ -16,12 +16,12 @@
+ 
+ package net.fabricmc.fabric.impl.client.texture;
+ 
+-import net.minecraft.client.texture.NativeImage;
+-import net.minecraft.client.texture.Sprite;
+-import net.minecraft.client.texture.SpriteAtlasTexture;
++import net.minecraft.client.renderer.texture.AtlasTexture;
++import net.minecraft.client.renderer.texture.NativeImage;
++import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+ 
+-public class FabricSprite extends Sprite {
+-	public FabricSprite(SpriteAtlasTexture spriteAtlasTexture, Sprite.Info info, int mipmap, int u, int v, int x, int y, NativeImage nativeImage) {
++public class FabricSprite extends TextureAtlasSprite {
++	public FabricSprite(AtlasTexture spriteAtlasTexture, TextureAtlasSprite.Info info, int mipmap, int u, int v, int x, int y, NativeImage nativeImage) {
+ 		super(spriteAtlasTexture, info, mipmap, u, v, x, y, nativeImage);
+ 	}
+ }
+diff --git a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/impl/client/texture/SpriteRegistryCallbackHolder.java b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/impl/client/texture/SpriteRegistryCallbackHolder.java
+index 734b901..71721f0 100644
+--- a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/impl/client/texture/SpriteRegistryCallbackHolder.java
++++ b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/impl/client/texture/SpriteRegistryCallbackHolder.java
+@@ -16,28 +16,27 @@
+ 
+ package net.fabricmc.fabric.impl.client.texture;
+ 
++import net.fabricmc.fabric.api.event.Event;
++import net.fabricmc.fabric.api.event.EventFactory;
++import net.fabricmc.fabric.api.event.client.ClientSpriteRegistryCallback;
++import net.minecraft.util.ResourceLocation;
++
+ import java.util.Map;
+ import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.locks.Lock;
+ import java.util.concurrent.locks.ReadWriteLock;
+ import java.util.concurrent.locks.ReentrantReadWriteLock;
+ 
+-import net.minecraft.util.Identifier;
+-
+-import net.fabricmc.fabric.api.event.Event;
+-import net.fabricmc.fabric.api.event.EventFactory;
+-import net.fabricmc.fabric.api.event.client.ClientSpriteRegistryCallback;
+-
+ public final class SpriteRegistryCallbackHolder {
+ 	public static final Event<ClientSpriteRegistryCallback> EVENT_GLOBAL = createEvent();
+-	private static final Map<Identifier, Event<ClientSpriteRegistryCallback>> eventMap = new ConcurrentHashMap<>();
++	private static final Map<ResourceLocation, Event<ClientSpriteRegistryCallback>> eventMap = new ConcurrentHashMap<>();
+ 	private static final ReadWriteLock eventMapLock = new ReentrantReadWriteLock();
+ 	private static final Lock eventMapReadLock = eventMapLock.readLock();
+ 	private static final Lock eventMapWriteLock = eventMapLock.writeLock();
+ 
+ 	private SpriteRegistryCallbackHolder() { }
+ 
+-	public static Event<ClientSpriteRegistryCallback> eventLocal(Identifier key) {
++	public static Event<ClientSpriteRegistryCallback> eventLocal(ResourceLocation key) {
+ 		return eventMap.computeIfAbsent(key, (a) -> createEvent());
+ 	}
+ 
+diff --git a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/mixin/client/texture/MixinSpriteAtlasTexture.java b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/mixin/client/texture/MixinSpriteAtlasTexture.java
+index ee435de..4fcce7e 100644
+--- a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/mixin/client/texture/MixinSpriteAtlasTexture.java
++++ b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/mixin/client/texture/MixinSpriteAtlasTexture.java
+@@ -16,14 +16,17 @@
+ 
+ package net.fabricmc.fabric.mixin.client.texture;
+ 
+-import java.util.Collection;
+-import java.util.HashMap;
+-import java.util.HashSet;
+-import java.util.LinkedHashSet;
+-import java.util.Map;
+-import java.util.Set;
+-
+ import com.google.common.base.Joiner;
++import net.fabricmc.fabric.api.client.texture.DependentSprite;
++import net.fabricmc.fabric.api.event.client.ClientSpriteRegistryCallback;
++import net.fabricmc.fabric.impl.client.texture.SpriteRegistryCallbackHolder;
++import net.minecraft.client.renderer.texture.AtlasTexture;
++import net.minecraft.client.renderer.texture.TextureAtlasSprite;
++import net.minecraft.crash.CrashReport;
++import net.minecraft.crash.CrashReportCategory;
++import net.minecraft.crash.ReportedException;
++import net.minecraft.resources.IResourceManager;
++import net.minecraft.util.ResourceLocation;
+ import org.spongepowered.asm.mixin.Mixin;
+ import org.spongepowered.asm.mixin.Shadow;
+ import org.spongepowered.asm.mixin.injection.At;
+@@ -31,28 +34,23 @@ import org.spongepowered.asm.mixin.injection.Inject;
+ import org.spongepowered.asm.mixin.injection.ModifyVariable;
+ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+ 
+-import net.minecraft.client.texture.Sprite;
+-import net.minecraft.client.texture.SpriteAtlasTexture;
+-import net.minecraft.resource.ResourceManager;
+-import net.minecraft.util.Identifier;
+-import net.minecraft.util.crash.CrashException;
+-import net.minecraft.util.crash.CrashReport;
+-import net.minecraft.util.crash.CrashReportSection;
+-
+-import net.fabricmc.fabric.api.client.texture.DependentSprite;
+-import net.fabricmc.fabric.api.event.client.ClientSpriteRegistryCallback;
+-import net.fabricmc.fabric.impl.client.texture.SpriteRegistryCallbackHolder;
++import java.util.Collection;
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.LinkedHashSet;
++import java.util.Map;
++import java.util.Set;
+ 
+-@Mixin(SpriteAtlasTexture.class)
++@Mixin(AtlasTexture.class)
+ public abstract class MixinSpriteAtlasTexture {
+ 	@Shadow
+-	public abstract Identifier getId();
++	public abstract ResourceLocation getTextureLocation();
+ 
+-	private Map<Identifier, Sprite> fabric_injectedSprites;
++	private Map<ResourceLocation, TextureAtlasSprite> fabric_injectedSprites;
+ 
+ 	// Loads in custom sprite object injections.
+-	@Inject(at = @At("RETURN"), method = "loadSprites(Lnet/minecraft/resource/ResourceManager;Ljava/util/Set;)Ljava/util/Collection;")
+-	private void afterLoadSprites(ResourceManager resourceManager_1, Set<Identifier> set_1, CallbackInfoReturnable<Collection<Sprite>> info) {
++	@Inject(at = @At("RETURN"), method = "makeSprites")
++	private void afterLoadSprites(IResourceManager resourceManager_1, Set<ResourceLocation> set_1, CallbackInfoReturnable<Collection<TextureAtlasSprite>> info) {
+ 		if (fabric_injectedSprites != null) {
+ 			info.getReturnValue().addAll(fabric_injectedSprites.values());
+ 			fabric_injectedSprites = null;
+@@ -60,20 +58,20 @@ public abstract class MixinSpriteAtlasTexture {
+ 	}
+ 
+ 	// Handles DependentSprite + custom sprite object injections.
+-	@ModifyVariable(at = @At(value = "INVOKE", target = "Lnet/minecraft/client/texture/SpriteAtlasTexture;loadSprites(Lnet/minecraft/resource/ResourceManager;Ljava/util/Set;)Ljava/util/Collection;"), method = "stitch")
+-	public Set<Identifier> beforeSpriteLoad(Set<Identifier> set) {
++	@ModifyVariable(at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/texture/AtlasTexture;makeSprites(Lnet/minecraft/resources/IResourceManager;Ljava/util/Set;)Ljava/util/Collection;"), method = "stitch")
++	public Set<ResourceLocation> beforeSpriteLoad(Set<ResourceLocation> set) {
+ 		fabric_injectedSprites = new HashMap<>();
+ 		ClientSpriteRegistryCallback.Registry registry = new ClientSpriteRegistryCallback.Registry(fabric_injectedSprites, set::add);
+ 
+-		SpriteRegistryCallbackHolder.eventLocal(getId()).invoker().registerSprites((SpriteAtlasTexture) (Object) this, registry);
+-		SpriteRegistryCallbackHolder.EVENT_GLOBAL.invoker().registerSprites((SpriteAtlasTexture) (Object) this, registry);
++		SpriteRegistryCallbackHolder.eventLocal(getTextureLocation()).invoker().registerSprites((AtlasTexture) (Object) this, registry);
++		SpriteRegistryCallbackHolder.EVENT_GLOBAL.invoker().registerSprites((AtlasTexture) (Object) this, registry);
+ 
+ 		// TODO: Unoptimized.
+ 		Set<DependentSprite> dependentSprites = new HashSet<>();
+-		Set<Identifier> dependentSpriteIds = new HashSet<>();
++		Set<ResourceLocation> dependentSpriteIds = new HashSet<>();
+ 
+-		for (Identifier id : set) {
+-			Sprite sprite;
++		for (ResourceLocation id : set) {
++			TextureAtlasSprite sprite;
+ 
+ 			if ((sprite = fabric_injectedSprites.get(id)) instanceof DependentSprite) {
+ 				dependentSprites.add((DependentSprite) sprite);
+@@ -81,7 +79,7 @@ public abstract class MixinSpriteAtlasTexture {
+ 			}
+ 		}
+ 
+-		Set<Identifier> result = set;
++		Set<ResourceLocation> result = set;
+ 		boolean isResultNew = false;
+ 
+ 		if (!dependentSprites.isEmpty()) {
+@@ -90,7 +88,7 @@ public abstract class MixinSpriteAtlasTexture {
+ 				isResultNew = true;
+ 			}
+ 
+-			for (Identifier id : set) {
++			for (ResourceLocation id : set) {
+ 				if (!dependentSpriteIds.contains(id)) {
+ 					result.add(id);
+ 				}
+@@ -102,7 +100,7 @@ public abstract class MixinSpriteAtlasTexture {
+ 				lastSpriteSize = result.size();
+ 
+ 				for (DependentSprite sprite : dependentSprites) {
+-					Identifier id = ((Sprite) sprite).getId();
++					ResourceLocation id = ((TextureAtlasSprite) sprite).getName();
+ 
+ 					if (!result.contains(id) && result.containsAll(sprite.getDependencies())) {
+ 						result.add(id);
+@@ -111,19 +109,19 @@ public abstract class MixinSpriteAtlasTexture {
+ 			}
+ 
+ 			if (result.size() < set.size()) {
+-				CrashReport report = CrashReport.create(new Throwable(), "Resolving sprite dependencies");
++				CrashReport report = CrashReport.makeCrashReport(new Throwable(), "Resolving sprite dependencies");
+ 
+ 				for (DependentSprite sprite : dependentSprites) {
+-					Identifier id = ((Sprite) sprite).getId();
++					ResourceLocation id = ((TextureAtlasSprite) sprite).getName();
+ 
+ 					if (!result.contains(id)) {
+-						CrashReportSection element = report.addElement("Unresolved sprite");
+-						element.add("Sprite", id);
+-						element.add("Dependencies", Joiner.on(',').join(sprite.getDependencies()));
++						CrashReportCategory element = report.makeCategory("Unresolved sprite");
++						element.addDetail("Sprite", id);
++						element.addDetail("Dependencies", Joiner.on(',').join(sprite.getDependencies()));
+ 					}
+ 				}
+ 
+-				throw new CrashException(report);
++				throw new ReportedException(report);
+ 			}
+ 		}
+ 
+-- 
+2.26.2
+

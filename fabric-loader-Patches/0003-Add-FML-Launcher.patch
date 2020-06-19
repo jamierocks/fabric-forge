@@ -1,0 +1,1999 @@
+From 32ebfd87ef1b9705fc071d771e25ba0049356d10 Mon Sep 17 00:00:00 2001
+From: Jamie Mansfield <jmansfield@cadixdev.org>
+Date: Wed, 17 Jun 2020 13:59:35 +0100
+Subject: [PATCH] Add FML Launcher
+
+
+diff --git a/build.gradle b/build.gradle
+index 34295a7..9556ab8 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -100,6 +100,20 @@ dependencies {
+ 		transitive = false
+ 	}
+ 	compile 'net.sf.jopt-simple:jopt-simple:5.0.3'
++
++	compile 'org.cadixdev:bombe:0.3.2'
++	compile ('org.cadixdev:bombe-asm:0.3.2') {
++		transitive = false
++	}
++	compile ('org.cadixdev:lorenz:0.5.2') {
++		transitive = false
++	}
++	compile ('org.cadixdev:lorenz-asm:0.5.2') {
++		transitive = false
++	}
++	compile ('org.cadixdev:atlas:0.2.0') {
++		transitive = false
++	}
+ }
+ 
+ processResources {
+@@ -118,7 +132,7 @@ processResources {
+ jar {
+ 	manifest {
+ 		attributes (
+-			'Main-Class': 'net.fabricmc.loader.launch.server.FabricServerLauncher'
++				'Implementation-Version': '31'
+ 		)
+ 	}
+ }
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/FabricForge.java b/src/main/java/org/neptunepowered/fabric/fml/FabricForge.java
+new file mode 100644
+index 0000000..77eb14d
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/FabricForge.java
+@@ -0,0 +1,83 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml;
++
++import com.google.common.jimfs.Configuration;
++import com.google.common.jimfs.Jimfs;
++import net.fabricmc.api.EnvType;
++import net.fabricmc.loader.FabricLoader;
++import net.fabricmc.loader.api.LanguageAdapter;
++import net.fabricmc.loader.util.DefaultLanguageAdapter;
++import net.minecraftforge.forgespi.Environment;
++import org.cadixdev.lorenz.MappingSet;
++import org.cadixdev.lorenz.io.MappingFormats;
++import org.cadixdev.lorenz.io.MappingsReader;
++
++import java.io.IOException;
++import java.io.InputStream;
++import java.nio.file.FileSystem;
++import java.nio.file.Files;
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.Map;
++import java.util.Set;
++
++public final class FabricForge {
++
++	public static final FileSystem fs = Jimfs.newFileSystem(Configuration.unix());
++	public static final MappingSet mappings = MappingSet.create();
++
++	public static final Map<String, LanguageAdapter> adapterMap = new HashMap<>();
++
++	public static ClassLoader currentLoader = null;
++	public static final Set<String> mixinConfigs = new HashSet<>();
++
++	static {
++		try (final InputStream is = FabricForge.class.getResourceAsStream("/fake_pack.mcmeta")) {
++			Files.copy(is, fs.getPath("/pack.mcmeta"));
++		}
++		catch (final Exception ignored) {
++		}
++
++		try (final MappingsReader reader = MappingFormats.TSRG.createReader(FabricForge.class.getResourceAsStream("/intermediary2srg.tsrg"))) {
++			reader.read(mappings);
++		}
++		catch (IOException ignored) {
++		}
++
++		FabricLoader.INSTANCE.setGameProvider(new ForgeGameProvider());
++		adapterMap.put("default", DefaultLanguageAdapter.INSTANCE);
++	}
++
++	public static EnvType envType() {
++		return Environment.get().getDist().isClient() ?
++				EnvType.CLIENT : EnvType.SERVER;
++	}
++
++	private FabricForge() {
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/FabricModContainer.java b/src/main/java/org/neptunepowered/fabric/fml/FabricModContainer.java
+new file mode 100644
+index 0000000..995a33a
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/FabricModContainer.java
+@@ -0,0 +1,178 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml;
++
++import net.fabricmc.api.ClientModInitializer;
++import net.fabricmc.api.DedicatedServerModInitializer;
++import net.fabricmc.api.ModInitializer;
++import net.fabricmc.loader.api.LanguageAdapter;
++import net.fabricmc.loader.api.LanguageAdapterException;
++import net.fabricmc.loader.api.metadata.ModMetadata;
++import net.fabricmc.loader.metadata.EntrypointMetadata;
++import net.fabricmc.loader.metadata.LoaderModMetadata;
++import net.minecraftforge.fml.LifecycleEventProvider;
++import net.minecraftforge.fml.ModLoadingStage;
++import net.minecraftforge.fml.common.thread.EffectiveSide;
++import net.minecraftforge.fml.loading.FMLLoader;
++import net.minecraftforge.forgespi.language.IModInfo;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++
++import java.nio.file.Path;
++
++public class FabricModContainer
++		extends net.minecraftforge.fml.ModContainer
++		implements net.fabricmc.loader.api.ModContainer {
++
++	public static final Logger log = LogManager.getLogger();
++
++	private static final net.fabricmc.loader.language.LanguageAdapter.Options LEGACY_ADAPTER_OPTIONS =
++			net.fabricmc.loader.language.LanguageAdapter.Options.Builder.create()
++					.missingSuperclassBehaviour(net.fabricmc.loader.language.LanguageAdapter.MissingSuperclassBehavior.RETURN_NULL)
++					.build();
++
++	private final ClassLoader modClassLoader;
++
++	private final LoaderModMetadata metadata;
++	private final Path rootPath;
++
++	public FabricModContainer(final IModInfo info, final ClassLoader modClassLoader) {
++		super(info);
++		this.contextExtension = () -> null;
++
++		this.modClassLoader = modClassLoader;
++
++		this.metadata = (LoaderModMetadata) info.getModProperties().get("fabric-metadata");
++		this.rootPath = FMLLoader.getLoadingModList().getModFileById(this.modId).getFile().findResource("/");
++
++		this.triggerMap.put(ModLoadingStage.CONSTRUCT, this::constructMod);
++	}
++
++	private void constructMod(final LifecycleEventProvider.LifecycleEvent event) {
++		log.debug("Loading {}", this.metadata.getId());
++		FabricForge.currentLoader = this.modClassLoader;
++
++		for (final String in : this.metadata.getOldInitializers()) {
++			final String adapter = this.metadata.getOldStyleLanguageAdapter();
++
++			try {
++				final Class<?> adapterClass = Class.forName(
++						adapter,
++						true,
++						this.modClassLoader
++				);
++				final net.fabricmc.loader.language.LanguageAdapter languageAdapter =
++						(net.fabricmc.loader.language.LanguageAdapter) adapterClass.getConstructor().newInstance();
++
++				final Object instance = languageAdapter.createInstance(in, LEGACY_ADAPTER_OPTIONS);
++
++				if (instance instanceof ModInitializer) {
++					((ModInitializer) instance).onInitialize();
++				}
++
++				if (instance instanceof ClientModInitializer && EffectiveSide.get().isClient()) {
++					((ClientModInitializer) instance).onInitializeClient();
++				}
++
++				if (instance instanceof DedicatedServerModInitializer && EffectiveSide.get().isServer()) {
++					((DedicatedServerModInitializer) instance).onInitializeServer();
++				}
++			}
++			catch (final Throwable ex) {
++				log.error("Failed to create adapter {} for {}", adapter, this.metadata.getId(), ex);
++			}
++		}
++
++		for (final String key : this.metadata.getEntrypointKeys()) {
++			if ("server".equals(key) && !EffectiveSide.get().isServer()) {
++				continue;
++			}
++			if ("client".equals(key) && !EffectiveSide.get().isClient()) {
++				continue;
++			}
++
++			for (final EntrypointMetadata in : this.metadata.getEntrypoints(key)) {
++				if (!FabricForge.adapterMap.containsKey(in.getAdapter())) {
++					log.error("Could not find adapter {} for {}", in.getAdapter(), this.metadata.getId());
++					continue;
++				}
++				final LanguageAdapter adapter = FabricForge.adapterMap.get(in.getAdapter());
++
++				if ("main".equals(key)) {
++					try {
++						adapter.create(this, in.getValue(), ModInitializer.class).onInitialize();
++					}
++					catch (final LanguageAdapterException ex) {
++						log.error("Failed to create entrypoint {} for {}", in.getValue(), this.metadata.getId(), ex);
++					}
++				}
++				else if ("client".equals(key) && EffectiveSide.get().isClient()) {
++					try {
++						adapter.create(this, in.getValue(), ClientModInitializer.class).onInitializeClient();
++					}
++					catch (final LanguageAdapterException ex) {
++						log.error("Failed to create entrypoint {} for {}", in.getValue(), this.metadata.getId(), ex);
++					}
++				}
++				else if ("server".equals(key) && EffectiveSide.get().isServer()) {
++					try {
++						adapter.create(this, in.getValue(), DedicatedServerModInitializer.class).onInitializeServer();
++					}
++					catch (final LanguageAdapterException ex) {
++						log.error("Failed to create entrypoint {} for {}", in.getValue(), this.metadata.getId(), ex);
++					}
++				}
++			}
++		}
++
++		FabricForge.currentLoader = null;
++	}
++
++	/* Fabric */
++
++	@Override
++	public ModMetadata getMetadata() {
++		return this.metadata;
++	}
++
++	@Override
++	public Path getRootPath() {
++		return this.rootPath;
++	}
++
++	/* Forge */
++
++	@Override
++	public boolean matches(final Object mod) {
++		return this == mod;
++	}
++
++	@Override
++	public Object getMod() {
++		return this;
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/ForgeGameProvider.java b/src/main/java/org/neptunepowered/fabric/fml/ForgeGameProvider.java
+new file mode 100644
+index 0000000..0c22909
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/ForgeGameProvider.java
+@@ -0,0 +1,108 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml;
++
++import net.fabricmc.api.EnvType;
++import net.fabricmc.loader.entrypoint.EntrypointTransformer;
++import net.fabricmc.loader.game.GameProvider;
++
++import java.io.File;
++import java.nio.file.Path;
++import java.util.Collection;
++import java.util.Collections;
++import java.util.List;
++
++public class ForgeGameProvider implements GameProvider {
++
++	@Override
++	public String getGameId() {
++		return "minecraft";
++	}
++
++	@Override
++	public String getGameName() {
++		return "Minecraft";
++	}
++
++	@Override
++	public String getRawGameVersion() {
++		return null;
++	}
++
++	@Override
++	public String getNormalizedGameVersion() {
++		return null;
++	}
++
++	@Override
++	public Collection<BuiltinMod> getBuiltinMods() {
++		return Collections.emptySet();
++	}
++
++	@Override
++	public String getEntrypoint() {
++		return null;
++	}
++
++	@Override
++	public Path getLaunchDirectory() {
++		return new File(".").toPath();
++	}
++
++	@Override
++	public boolean isObfuscated() {
++		return false;
++	}
++
++	@Override
++	public boolean requiresUrlClassLoader() {
++		return false;
++	}
++
++	@Override
++	public List<Path> getGameContextJars() {
++		return null;
++	}
++
++	@Override
++	public boolean locateGame(final EnvType envType, final ClassLoader loader) {
++		return false;
++	}
++
++	@Override
++	public void acceptArguments(final String... arguments) {
++	}
++
++	@Override
++	public EntrypointTransformer getEntrypointTransformer() {
++		return null;
++	}
++
++	@Override
++	public void launch(final ClassLoader loader) {
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricClasspathLocator.java b/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricClasspathLocator.java
+new file mode 100644
+index 0000000..f34ce55
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricClasspathLocator.java
+@@ -0,0 +1,101 @@
++/*
++ * Minecraft Forge
++ * Copyright (c) 2016-2019.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation version 2.1
++ * of the License.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ */
++
++package org.neptunepowered.fabric.fml.discovery;
++
++import static net.minecraftforge.fml.loading.LogMarkers.CORE;
++
++import net.minecraftforge.fml.loading.LibraryFinder;
++import net.minecraftforge.fml.loading.moddiscovery.AbstractJarFileLocator;
++import net.minecraftforge.forgespi.locating.IModFile;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++import org.neptunepowered.fabric.fml.FabricForge;
++import org.neptunepowered.fabric.fml.language.FabricModFile;
++
++import java.io.IOException;
++import java.net.URL;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.util.ArrayList;
++import java.util.Enumeration;
++import java.util.LinkedHashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++
++/**
++ * Locates Fabric mods on the classpath, based on {@link net.minecraftforge.userdev.ClasspathLocator}.
++ */
++public class FabricClasspathLocator extends AbstractJarFileLocator {
++
++	private static final Logger log = LogManager.getLogger();
++
++	private Set<Path> mods;
++
++	@Override
++	public List<IModFile> scanMods() {
++		final List<IModFile> mods = new ArrayList<>();
++		for (final Path modPath : this.mods) {
++			final FabricModFile mod = new FabricModFile(modPath, this);
++			this.modJars.compute(mod, (mf, fs) -> createFileSystem(mf));
++			mods.add(mod);
++		}
++		return mods;
++	}
++
++	@Override
++	public Path findPath(final IModFile modFile, final String... path) {
++		if (path[path.length - 1].equals("pack.mcmeta")) {
++			return FabricForge.fs.getPath("/pack.mcmeta");
++		}
++
++		return super.findPath(modFile, path);
++	}
++
++	@Override
++	public String name() {
++		return "fabric userdev classpath";
++	}
++
++	@Override
++	public void initArguments(final Map<String, ?> arguments) {
++		try {
++			this.mods = new LinkedHashSet<>();
++			this.locateMods("fabric.mod.json", "classpath_mod");
++		}
++		catch (final IOException ex) {
++			log.fatal(CORE, "Error trying to find resources", ex);
++			throw new RuntimeException(ex);
++		}
++	}
++
++	private void locateMods(final String resource, final String name) throws IOException {
++		final Enumeration<URL> modJsons = ClassLoader.getSystemClassLoader().getResources(resource);
++		while (modJsons.hasMoreElements()) {
++			final URL url = modJsons.nextElement();
++			final Path path = LibraryFinder.findJarPathFor(resource, name, url);
++			if (Files.isDirectory(path)) continue;
++
++			log.debug(CORE, "Found classpath mod: {}", path);
++			this.mods.add(path);
++		}
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricExplodedDirectoryLocator.java b/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricExplodedDirectoryLocator.java
+new file mode 100644
+index 0000000..f82f0a5
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricExplodedDirectoryLocator.java
+@@ -0,0 +1,148 @@
++/*
++ * Minecraft Forge
++ * Copyright (c) 2016-2019.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation version 2.1
++ * of the License.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ */
++
++package org.neptunepowered.fabric.fml.discovery;
++
++import static net.minecraftforge.fml.loading.LogMarkers.LOADING;
++import static net.minecraftforge.fml.loading.LogMarkers.SCAN;
++
++import net.minecraftforge.forgespi.locating.IModFile;
++import net.minecraftforge.forgespi.locating.IModLocator;
++import org.apache.commons.lang3.tuple.Pair;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++import org.neptunepowered.fabric.fml.FabricForge;
++import org.neptunepowered.fabric.fml.language.FabricModFile;
++
++import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.nio.file.Paths;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import java.util.function.Consumer;
++import java.util.jar.Manifest;
++import java.util.stream.Stream;
++
++/**
++ * Locates Fabric mods in a directory, based on {@link net.minecraftforge.fml.loading.moddiscovery.ExplodedDirectoryLocator}.
++ */
++public class FabricExplodedDirectoryLocator implements IModLocator {
++
++	private static final Logger log = LogManager.getLogger();
++
++	private static final String NAME = "fabric exploded directory";
++	private static final String FABRIC_MOD_JSON = "fabric.mod.json";
++
++	private final List<Pair<Path, List<Path>>> rootDirs;
++	private final Map<IModFile, Pair<Path, List<Path>>> mods;
++
++	public FabricExplodedDirectoryLocator() {
++		this.rootDirs = new ArrayList<>();
++		this.mods = new HashMap<>();
++	}
++
++	@Override
++	public List<IModFile> scanMods() {
++		// Collect all the fabric.mod.json files used
++		this.rootDirs.forEach(pathPathPair -> {
++			final Path resources = pathPathPair.getLeft();
++			final Path modJson = resources.resolve(FABRIC_MOD_JSON);
++
++			if (Files.exists(modJson)) {
++				log.debug(LOADING, "Found exploded directory mod manifest at {}", modJson.toString());
++
++				final FabricModFile mf = new FabricModFile(pathPathPair.getLeft(), this);
++				this.mods.put(mf, pathPathPair);
++			}
++			else {
++				log.warn(LOADING, "Failed to find exploded resource fabric.mod.json in directory {}", resources.toString());
++			}
++		});
++		return new ArrayList<>(this.mods.keySet());
++	}
++
++	@Override
++	public String name() {
++		return NAME;
++	}
++
++	@Override
++	public Path findPath(final IModFile modFile, final String... path) {
++		if (path.length < 1) {
++			throw new IllegalArgumentException("Missing path");
++		}
++		final Path target = Paths.get(path[0], Arrays.copyOfRange(path, 1, path.length));
++
++		if (target.endsWith("pack.mcmeta")) {
++			return FabricForge.fs.getPath("/pack.mcmeta");
++		}
++
++		// try right path first (resources)
++		final Path found = this.mods.get(modFile).getLeft().resolve(target);
++		if (Files.exists(found)) return found;
++		// then try left path (classes)
++		return this.mods.get(modFile).getRight().stream()
++				.map(p -> p.resolve(target))
++				.filter(Files::exists)
++				.findFirst().orElse(found.resolve(target));
++	}
++
++	@Override
++	public void scanFile(final IModFile modFile, final Consumer<Path> pathConsumer) {
++		log.debug(SCAN, "Scanning exploded directory {}", modFile.getFilePath().toString());
++		final Pair<Path, List<Path>> pathPathPair = this.mods.get(modFile);
++		// classes are in the right branch of the pair
++		pathPathPair.getRight().forEach(path -> scanIndividualPath(path, pathConsumer));
++		log.debug(SCAN, "Exploded directory scan complete {}", pathPathPair.getLeft().toString());
++	}
++
++	private void scanIndividualPath(final Path path, Consumer<Path> pathConsumer) {
++		log.debug(SCAN, "Scanning exploded target {}", path.toString());
++		try (Stream<Path> files = Files.find(path, Integer.MAX_VALUE, (p, a) -> p.getNameCount() > 0 && p.getFileName().toString().endsWith(".class"))) {
++			files.forEach(pathConsumer);
++		}
++		catch (IOException e) {
++			log.error(SCAN, "Exception scanning {}", path, e);
++		}
++	}
++
++	@Override
++	public Optional<Manifest> findManifest(final Path file) {
++		return Optional.empty();
++	}
++
++	@Override
++	public void initArguments(final Map<String, ?> arguments) {
++		final List<Pair<Path, List<Path>>> explodedTargets = ((Map<String, List<Pair<Path, List<Path>>>>) arguments).get("explodedTargets");
++		if (explodedTargets != null && !explodedTargets.isEmpty()) {
++			this.rootDirs.addAll(explodedTargets);
++		}
++	}
++
++	@Override
++	public boolean isValid(final IModFile modFile) {
++		return mods.get(modFile) != null;
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricModsFolderLocator.java b/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricModsFolderLocator.java
+new file mode 100644
+index 0000000..8ed1981
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricModsFolderLocator.java
+@@ -0,0 +1,197 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml.discovery;
++
++import static net.minecraftforge.fml.loading.LogMarkers.SCAN;
++
++import com.google.gson.JsonElement;
++import com.google.gson.JsonObject;
++import com.google.gson.JsonParser;
++import net.fabricmc.loader.FabricLoader;
++import net.fabricmc.loader.metadata.LoaderModMetadata;
++import net.fabricmc.loader.metadata.ModMetadataParser;
++import net.fabricmc.loader.metadata.NestedJarEntry;
++import net.fabricmc.loader.util.FileSystemUtil;
++import net.minecraftforge.fml.loading.FMLPaths;
++import net.minecraftforge.fml.loading.ModDirTransformerDiscoverer;
++import net.minecraftforge.fml.loading.StringUtils;
++import net.minecraftforge.fml.loading.moddiscovery.AbstractJarFileLocator;
++import net.minecraftforge.forgespi.locating.IModFile;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++import org.cadixdev.atlas.Atlas;
++import org.cadixdev.bombe.asm.jar.JarEntryRemappingTransformer;
++import org.cadixdev.lorenz.asm.LorenzRemapper;
++import org.neptunepowered.fabric.fml.FabricForge;
++import org.neptunepowered.fabric.fml.discovery.mixin.MixinRefmapTransformer;
++import org.neptunepowered.fabric.fml.discovery.mixin.MixinRemappingTransformer;
++import org.neptunepowered.fabric.fml.language.FabricModFile;
++
++import java.io.IOException;
++import java.io.InputStream;
++import java.io.Reader;
++import java.nio.file.FileSystem;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.nio.file.StandardCopyOption;
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import java.util.stream.Collectors;
++
++public class FabricModsFolderLocator extends AbstractJarFileLocator {
++
++	private static final Logger log = LogManager.getLogger();
++
++	private static final String SUFFIX = ".jar";
++
++	@Override
++	public Path findPath(final IModFile modFile, final String... path) {
++		if (path[path.length - 1].equals("pack.mcmeta")) {
++			return FabricForge.fs.getPath("/pack.mcmeta");
++		}
++
++		return super.findPath(modFile, path);
++	}
++
++	@Override
++	public List<IModFile> scanMods() {
++		log.debug(SCAN, "Scanning mods dir {} for mods", FMLPaths.MODSDIR.get());
++		final List<Path> excluded = ModDirTransformerDiscoverer.allExcluded();
++
++		final List<IModFile> scan = new ArrayList<>();
++		try {
++			for (final Path mod : Files.list(FMLPaths.MODSDIR.get())
++					.sorted(Comparator.comparing(path -> StringUtils.toLowerCase(path.getFileName().toString())))
++					.collect(Collectors.toList())) {
++				if (excluded.contains(mod)) continue;
++				if (!StringUtils.toLowerCase(mod.getFileName().toString()).endsWith(SUFFIX)) continue;
++
++				final String originalName = mod.getFileName().toString();
++				handleMod(scan, mod, originalName.substring(0, originalName.length() - SUFFIX.length()));
++			}
++		}
++		catch (final IOException ignored) {
++		}
++
++		return scan;
++	}
++
++	private void handleMod(final List<IModFile> scan, final Path mod, final String name) throws IOException {
++		final Set<String> mixinConfigs = new HashSet<>();
++		final Set<String> mixinRefmaps = new HashSet<>();
++
++		try (final FileSystem fs = FileSystemUtil.getJarFileSystem(mod, false).get()) {
++			final Path modJson = fs.getPath("fabric.mod.json");
++			if (Files.exists(modJson)) {
++				try (final InputStream is = Files.newInputStream(modJson)) {
++					final LoaderModMetadata metadata = ModMetadataParser.getMods(FabricLoader.INSTANCE, is)[0];
++					mixinConfigs.addAll(metadata.getMixinConfigs(FabricForge.envType()));
++				}
++			}
++
++			for (final String mixinConfig : mixinConfigs) {
++				final Path mixinConfigPath = fs.getPath(mixinConfig);
++				if (Files.notExists(mixinConfigPath)) continue;
++
++				try (final Reader reader = Files.newBufferedReader(mixinConfigPath)) {
++					final JsonElement config = new JsonParser().parse(reader);
++					if (!config.isJsonObject()) {
++						log.error("Malformed Mixin config {}, will likely error", mixinConfig);
++						continue;
++					}
++					final JsonObject configObj = config.getAsJsonObject();
++
++					mixinRefmaps.add(configObj.getAsJsonPrimitive("refmap").getAsString());
++				}
++			}
++		}
++		log.debug("Found Mixins configs '{}' and '{}' refmaps in {}", mixinConfigs, mixinRefmaps, name);
++		FabricForge.mixinConfigs.addAll(mixinConfigs);
++
++		// Remap mod to SRG
++		final Path tempPath = Files.createTempFile(name, ".jar");
++		tempPath.toFile().deleteOnExit();
++
++		try (final Atlas atlas = new Atlas()) {
++			atlas.install(ctx -> new MixinRemappingTransformer(FabricForge.mappings));
++			atlas.install(ctx -> new JarEntryRemappingTransformer(new LorenzRemapper(
++					FabricForge.mappings,
++					ctx.inheritanceProvider()
++			)));
++			atlas.install(ctx -> new MixinRefmapTransformer(mixinRefmaps, FabricForge.mappings, "searge"));
++			atlas.run(mod, tempPath);
++		}
++		log.info(tempPath);
++
++		final FabricModFile modFile = new FabricModFile(tempPath, this);
++		this.modJars.compute(modFile, (mf, fs) -> {
++			try {
++				return FileSystemUtil.getJarFileSystem(mf.getFilePath(), false).get();
++			}
++			catch (final IOException ex) {
++				throw new RuntimeException(ex);
++			}
++		});
++		scan.add(modFile);
++
++		final Path modJson = this.findPath(modFile, "fabric.mod.json");
++		if (Files.notExists(modJson)) return;
++
++		try (final InputStream is = Files.newInputStream(modJson)) {
++			final LoaderModMetadata metadata = ModMetadataParser.getMods(FabricLoader.INSTANCE, is)[0];
++
++			for (final NestedJarEntry jar : metadata.getJars()) {
++				final Path originalPath = this.findPath(modFile, jar.getFile());
++				final Path dest = Files.createTempFile("jarinjarmod-", ".jar");
++				dest.toFile().deleteOnExit();
++
++				try {
++					Files.copy(originalPath, dest, StandardCopyOption.REPLACE_EXISTING);
++				}
++				catch (final IOException ex) {
++					throw new RuntimeException(ex);
++				}
++
++				final String originalName = originalPath.getFileName().toString();
++				handleMod(scan, dest, originalName.substring(0, originalName.length() - SUFFIX.length()));
++			}
++		}
++	}
++
++	@Override
++	public String name() {
++		return "fabric mods directory";
++	}
++
++	@Override
++	public void initArguments(final Map<String, ?> arguments) {
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRefmapTransformer.java b/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRefmapTransformer.java
+new file mode 100644
+index 0000000..0b3ee35
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRefmapTransformer.java
+@@ -0,0 +1,125 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml.discovery.mixin;
++
++import com.google.gson.Gson;
++import com.google.gson.GsonBuilder;
++import com.google.gson.JsonElement;
++import com.google.gson.JsonObject;
++import com.google.gson.JsonParser;
++import com.google.gson.JsonPrimitive;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++import org.cadixdev.bombe.jar.JarEntryTransformer;
++import org.cadixdev.bombe.jar.JarResourceEntry;
++import org.cadixdev.bombe.type.signature.MethodSignature;
++import org.cadixdev.lorenz.MappingSet;
++import org.cadixdev.lorenz.model.ClassMapping;
++
++import java.io.ByteArrayInputStream;
++import java.io.IOException;
++import java.io.InputStreamReader;
++import java.util.Map;
++import java.util.Set;
++
++public class MixinRefmapTransformer implements JarEntryTransformer {
++
++	private static final Logger log = LogManager.getLogger();
++
++	private static final Gson GSON = new GsonBuilder()
++			.setPrettyPrinting()
++			.create();
++
++	private final Set<String> refmaps;
++	private final MappingSet mappings;
++	private final String name;
++
++	public MixinRefmapTransformer(final Set<String> refmaps, final MappingSet mappings, final String name) {
++		this.refmaps = refmaps;
++		this.mappings = mappings;
++		this.name = name;
++	}
++
++	@Override
++	public JarResourceEntry transform(final JarResourceEntry entry) {
++		if (!this.refmaps.contains(entry.getName())) return entry;
++
++		final ByteArrayInputStream bais = new ByteArrayInputStream(entry.getContents());
++		try (final InputStreamReader reader = new InputStreamReader(bais)) {
++			final JsonElement raw = new JsonParser().parse(reader);
++			if (!raw.isJsonObject()) {
++				log.error("Malformed Mixin refmap {}, will likely error", entry.getName());
++				return entry;
++			}
++			final JsonObject refmap = raw.getAsJsonObject();
++
++			final JsonObject mappings = refmap.getAsJsonObject("mappings");
++			for (final Map.Entry<String, JsonElement> mapping : mappings.entrySet()) {
++				final JsonObject mixinMappings = mapping.getValue().getAsJsonObject();
++				for (final Map.Entry<String, JsonElement> mixinMapping : mixinMappings.entrySet()) {
++					final String obf = mixinMapping.getValue().getAsString();
++
++					// Class
++					if (!obf.startsWith("L") && !obf.contains("(")) {
++						final String deobf = this.mappings.computeClassMapping(obf)
++								.map(ClassMapping::getFullDeobfuscatedName)
++								.orElse(obf);
++
++						mixinMapping.setValue(new JsonPrimitive(deobf));
++					}
++					// LType;methodNamedescriptor
++					else {
++						final int classEnd = obf.indexOf(';');
++						final String owner = obf.substring(1, classEnd);
++						final MethodSignature signature = MethodSignature.of(obf.substring(classEnd + 1));
++
++						this.mappings.computeClassMapping(owner).ifPresent(klass -> {
++							klass.getMethodMapping(signature).ifPresent(method -> {
++								final String deobf = "L" + klass.getFullDeobfuscatedName() + ";" +
++										method.getDeobfuscatedSignature().toJvmsIdentifier();
++
++								mixinMapping.setValue(new JsonPrimitive(deobf));
++							});
++						});
++					}
++				}
++			}
++
++			final JsonObject data = refmap.getAsJsonObject("data");
++			data.remove("named:intermediary"); // todo: test without
++			data.add(this.name, mappings);
++
++			return new JarResourceEntry(entry.getName(), entry.getTime(),
++					GSON.toJson(refmap).getBytes()
++			);
++		}
++		catch (final IOException ignored) {
++		}
++
++		return entry;
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRemappingTransformer.java b/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRemappingTransformer.java
+new file mode 100644
+index 0000000..c391b01
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRemappingTransformer.java
+@@ -0,0 +1,134 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml.discovery.mixin;
++
++import org.cadixdev.bombe.jar.JarClassEntry;
++import org.cadixdev.bombe.jar.JarEntryTransformer;
++import org.cadixdev.lorenz.MappingSet;
++import org.cadixdev.lorenz.model.ClassMapping;
++import org.cadixdev.lorenz.model.FieldMapping;
++import org.cadixdev.lorenz.model.MethodMapping;
++import org.objectweb.asm.ClassReader;
++import org.objectweb.asm.Type;
++import org.objectweb.asm.tree.AnnotationNode;
++import org.objectweb.asm.tree.ClassNode;
++import org.objectweb.asm.tree.FieldNode;
++import org.objectweb.asm.tree.MethodNode;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Optional;
++
++public class MixinRemappingTransformer implements JarEntryTransformer {
++
++	private final MappingSet mappings;
++
++	public MixinRemappingTransformer(final MappingSet mappings) {
++		this.mappings = mappings;
++	}
++
++	@Override
++	public JarClassEntry transform(final JarClassEntry entry) {
++		final ClassNode node = new ClassNode();
++		new ClassReader(entry.getContents()).accept(node, 0);
++
++		if (node.invisibleAnnotations != null) {
++			final List<ClassMapping<?, ?>> targetClasses = new ArrayList<>();
++
++			for (final AnnotationNode annotation : node.invisibleAnnotations) {
++				if (!"Lorg/spongepowered/asm/mixin/Mixin;".equals(annotation.desc)) continue;
++
++				for (int i = 0; i < annotation.values.size(); i++) {
++					final String key = (String) annotation.values.get(i);
++					final Object value = annotation.values.get(++i);
++
++					if ("value".equals(key)) {
++						for (final Type targetType : (List<Type>) value) {
++							this.mappings.computeClassMapping(targetType.getClassName()).ifPresent(targetClasses::add);
++						}
++					}
++					else if ("targets".equals(key)) {
++						for (final String targetType : (List<String>) value) {
++							this.mappings.computeClassMapping(targetType).ifPresent(targetClasses::add);
++						}
++					}
++				}
++			}
++
++			if (node.methods != null) {
++				for (final MethodNode method : node.methods) {
++					if (method.visibleAnnotations == null) continue;
++
++					for (final AnnotationNode annotation : method.visibleAnnotations) {
++						if (!"Lorg/spongepowered/asm/mixin/Shadow;".equals(annotation.desc)) continue;
++
++						getMethodMapping(targetClasses, method).ifPresent(methodMapping -> {
++							this.mappings.getOrCreateClassMapping(node.name)
++									.getOrCreateMethodMapping(method.name, method.desc)
++									.setDeobfuscatedName(methodMapping.getDeobfuscatedName());
++						});
++					}
++				}
++			}
++
++			if (node.fields != null) {
++				for (final FieldNode field : node.fields) {
++					if (field.visibleAnnotations == null) continue;
++
++					for (final AnnotationNode annotation : field.visibleAnnotations) {
++						if (!"Lorg/spongepowered/asm/mixin/Shadow;".equals(annotation.desc)) continue;
++
++						getFieldMapping(targetClasses, field).ifPresent(methodMapping -> {
++							this.mappings.getOrCreateClassMapping(node.name)
++									.getOrCreateFieldMapping(field.name)
++									.setDeobfuscatedName(methodMapping.getDeobfuscatedName());
++						});
++					}
++				}
++			}
++		}
++
++		// We just create mappings, we don't actually change anything
++		return entry;
++	}
++
++	private static Optional<MethodMapping> getMethodMapping(final List<ClassMapping<?, ?>> targetClasses, final MethodNode method) {
++		for (final ClassMapping<?, ?> targetClass : targetClasses) {
++			final Optional<MethodMapping> mapping = targetClass.getMethodMapping(method.name, method.desc);
++			if (mapping.isPresent()) return mapping;
++		}
++		return Optional.empty();
++	}
++
++	private static Optional<FieldMapping> getFieldMapping(final List<ClassMapping<?, ?>> targetClasses, final FieldNode field) {
++		for (final ClassMapping<?, ?> targetClass : targetClasses) {
++			final Optional<FieldMapping> mapping = targetClass.getFieldMapping(field.name);
++			if (mapping.isPresent()) return mapping;
++		}
++		return Optional.empty();
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/language/FabricModFile.java b/src/main/java/org/neptunepowered/fabric/fml/language/FabricModFile.java
+new file mode 100644
+index 0000000..f417a0f
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/language/FabricModFile.java
+@@ -0,0 +1,117 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml.language;
++
++import net.minecraftforge.fml.loading.FMLLoader;
++import net.minecraftforge.fml.loading.LogMarkers;
++import net.minecraftforge.fml.loading.moddiscovery.CoreModFile;
++import net.minecraftforge.fml.loading.moddiscovery.ModFile;
++import net.minecraftforge.forgespi.language.IModFileInfo;
++import net.minecraftforge.forgespi.language.IModInfo;
++import net.minecraftforge.forgespi.language.IModLanguageProvider;
++import net.minecraftforge.forgespi.locating.IModLocator;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++
++import java.nio.file.Path;
++import java.util.Collections;
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import java.util.function.Supplier;
++
++/**
++ * A mod file containing a Fabric mod, identified by the inclusion of a
++ * {@code "fabric.mod.json"} file.
++ */
++public class FabricModFile extends ModFile {
++
++	private static final Logger log = LogManager.getLogger();
++
++	private IModFileInfo modFileInfo;
++	private IModLanguageProvider loader;
++
++	public FabricModFile(final Path path, final IModLocator locator) {
++		super(path, locator);
++	}
++
++	@Override
++	public Supplier<Map<String, Object>> getSubstitutionMap() {
++		return Collections::emptyMap;
++	}
++
++	@Override
++	public Type getType() {
++		return Type.MOD;
++	}
++
++	@Override
++	public void identifyLanguage() {
++		this.loader = FMLLoader.getLanguageLoadingProvider().findLanguage(this, this.modFileInfo.getModLoader(), this.modFileInfo.getModLoaderVersion());
++	}
++
++	@Override
++	public IModLanguageProvider getLoader() {
++		return this.loader;
++	}
++
++	@Override
++	public List<IModInfo> getModInfos() {
++		return this.modFileInfo.getMods();
++	}
++
++	@Override
++	public boolean identifyMods() {
++		this.modFileInfo = FabricModFileParser.readModList(this);
++		if (this.modFileInfo == null) return false;
++
++		log.debug(LogMarkers.LOADING, "Loading mod file {} with language {}", this.getFilePath(), this.modFileInfo.getModLoader());
++		return true;
++	}
++
++	@Override
++	public IModFileInfo getModFileInfo() {
++		return this.modFileInfo;
++	}
++
++	@Override
++	public List<CoreModFile> getCoreMods() {
++		return Collections.emptyList();
++	}
++
++	@Override
++	public Optional<Path> getAccessTransformer() {
++		return Optional.empty();
++	}
++
++	@Override
++	public String toString() {
++		return "FabricModFile{" +
++				"path=" + this.getFilePath() +
++				'}';
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/language/FabricModFileParser.java b/src/main/java/org/neptunepowered/fabric/fml/language/FabricModFileParser.java
+new file mode 100644
+index 0000000..cc57a61
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/language/FabricModFileParser.java
+@@ -0,0 +1,121 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml.language;
++
++import com.electronwill.nightconfig.core.Config;
++import com.electronwill.nightconfig.core.UnmodifiableConfig;
++import net.fabricmc.loader.FabricLoader;
++import net.fabricmc.loader.metadata.LoaderModMetadata;
++import net.fabricmc.loader.metadata.ModMetadataParser;
++import net.minecraftforge.fml.loading.LogMarkers;
++import net.minecraftforge.fml.loading.moddiscovery.ModFile;
++import net.minecraftforge.fml.loading.moddiscovery.ModFileInfo;
++import net.minecraftforge.forgespi.language.IModFileInfo;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++
++import java.io.IOException;
++import java.io.InputStream;
++import java.lang.reflect.Constructor;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.util.ArrayList;
++import java.util.List;
++
++public class FabricModFileParser {
++
++	private static final Logger log = LogManager.getLogger();
++
++	private static final String MOD_LOADER = "fabric";
++
++	public static IModFileInfo readModList(final FabricModFile modFile) {
++		log.debug(LogMarkers.LOADING, "Considering mod file candidate {}", modFile.getFilePath());
++		final Path modsjson = modFile.getLocator().findPath(modFile, "fabric.mod.json");
++
++		if (!Files.exists(modsjson)) {
++			log.warn(LogMarkers.LOADING, "Mod file {} is missing fabric.mod.json file", modFile);
++			return null;
++		}
++		else {
++			return loadModFile(modFile, modsjson);
++		}
++	}
++
++	public static IModFileInfo loadModFile(FabricModFile file, Path modsjson) {
++		try (final InputStream is = Files.newInputStream(modsjson)) {
++			final LoaderModMetadata metadata = ModMetadataParser.getMods(FabricLoader.INSTANCE, is)[0];
++			return create(file, metadata);
++		}
++		catch (final IOException ex) {
++			log.warn(LogMarkers.LOADING, "Failed to load mod file", ex);
++			return null;
++		}
++	}
++
++	public static ModFileInfo create(final FabricModFile file, final LoaderModMetadata metadata) {
++		try {
++			final Constructor<ModFileInfo> cstr = ModFileInfo.class.getDeclaredConstructor(ModFile.class, UnmodifiableConfig.class);
++			cstr.setAccessible(true);
++			return cstr.newInstance(file, createConfig(metadata));
++		}
++		catch (final Throwable ignored) {
++			return null;
++		}
++	}
++
++	public static UnmodifiableConfig createConfig(final LoaderModMetadata metadata) {
++		final Config config = Config.inMemory();
++		config.set("modLoader", MOD_LOADER);
++		config.set("loaderVersion", "[31,)");
++
++		final List<UnmodifiableConfig> mods = new ArrayList<>();
++		final Config modConfig = Config.inMemory();
++		modConfig.set("modId", metadata.getId());
++		modConfig.set("displayName", metadata.getName());
++		modConfig.set("version", metadata.getVersion().getFriendlyString());
++		modConfig.set("description", metadata.getDescription());
++		metadata.getIconPath(31).ifPresent(logo -> {
++			if (logo.contains("/")) {
++				// Fabric mods often include their icons under a directory, which is unfortunately
++				// currently incompatible with Minecraft Forge as it calls ResourcePack#getRootResourceStream()
++				return;
++			}
++			modConfig.set("logoFile", logo);
++		});
++		mods.add(modConfig);
++
++		final Config properties = Config.inMemory();
++		properties.set("fabric-metadata", metadata);
++
++		final Config modProperties = Config.inMemory();
++		modProperties.set(metadata.getId(), properties);
++
++		config.set("mods", mods);
++		config.set("modproperties", modProperties);
++		return config;
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/language/FabricModLanguageProvider.java b/src/main/java/org/neptunepowered/fabric/fml/language/FabricModLanguageProvider.java
+new file mode 100644
+index 0000000..85b29a0
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/language/FabricModLanguageProvider.java
+@@ -0,0 +1,105 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml.language;
++
++import static net.minecraftforge.fml.loading.LogMarkers.LOADING;
++
++import net.fabricmc.loader.metadata.LoaderModMetadata;
++import net.minecraftforge.forgespi.language.ILifecycleEvent;
++import net.minecraftforge.forgespi.language.IModFileInfo;
++import net.minecraftforge.forgespi.language.IModInfo;
++import net.minecraftforge.forgespi.language.IModLanguageProvider;
++import net.minecraftforge.forgespi.language.ModFileScanData;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++import org.neptunepowered.fabric.fml.FabricForge;
++
++import java.util.HashMap;
++import java.util.Map;
++import java.util.function.Consumer;
++import java.util.function.Supplier;
++
++public class FabricModLanguageProvider implements IModLanguageProvider {
++
++	private static final Logger log = LogManager.getLogger();
++
++	private static final String NAME = "fabric";
++
++	@Override
++	public String name() {
++		return NAME;
++	}
++
++	@Override
++	public Consumer<ModFileScanData> getFileVisitor() {
++		return sd -> {
++			final Map<String, IModLanguageLoader> mods = new HashMap<>();
++
++			for (final IModFileInfo info : sd.getIModInfoData()) {
++				for (final IModInfo mod : info.getMods()) {
++					final LoaderModMetadata metadata = (LoaderModMetadata) mod.getModProperties().get("fabric-metadata");
++					if (!metadata.loadsInEnvironment(FabricForge.envType())) continue;
++
++					mods.put(mod.getModId(), new Loader());
++				}
++			}
++
++			sd.addLanguageLoader(mods);
++		};
++	}
++
++	@Override
++	public <R extends ILifecycleEvent<R>> void consumeLifecycleEvent(final Supplier<R> consumeEvent) {
++	}
++
++	private static class Loader implements IModLanguageLoader {
++
++		@Override
++		public <T> T loadMod(final IModInfo info, final ClassLoader modClassLoader, final ModFileScanData modFileScanResults) {
++			try {
++				final Class<?> fabricContainer = Class.forName(
++						"org.neptunepowered.fabric.fml.FabricModContainer",
++						true,
++						Thread.currentThread().getContextClassLoader()
++				);
++
++				log.debug(LOADING, "Loading FabricModContainer from classloader {} - got {}",
++						Thread.currentThread().getContextClassLoader(),
++						fabricContainer.getClassLoader()
++				);
++
++				return (T) fabricContainer.getConstructor(IModInfo.class, ClassLoader.class)
++						.newInstance(info, modClassLoader);
++			}
++			catch (final Throwable ex) {
++				log.fatal(LOADING, "Unable to load FabricModContainer", ex);
++				throw new RuntimeException(ex);
++			}
++		}
++
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/launch/FabricForgeLaunchService.java b/src/main/java/org/neptunepowered/fabric/fml/launch/FabricForgeLaunchService.java
+new file mode 100644
+index 0000000..d3f8563
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/launch/FabricForgeLaunchService.java
+@@ -0,0 +1,93 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml.launch;
++
++import cpw.mods.modlauncher.TransformingClassLoader;
++import cpw.mods.modlauncher.serviceapi.ILaunchPluginService;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++import org.neptunepowered.fabric.fml.FabricForge;
++import org.objectweb.asm.Type;
++import org.objectweb.asm.tree.ClassNode;
++import org.spongepowered.asm.mixin.Mixins;
++
++import java.lang.reflect.Field;
++import java.nio.file.Path;
++import java.util.Arrays;
++import java.util.EnumSet;
++import java.util.List;
++
++public class FabricForgeLaunchService implements ILaunchPluginService {
++
++	private static final Logger log = LogManager.getLogger();
++
++	private static final List<String> EXCLUDED_PACKAGES = Arrays.asList(
++			"net.fabricmc.api.", "net.fabricmc.loader.metadata.", "net.fabricmc.loader.launch.",
++			"org.neptunepowered.fabric.fml.discovery.",
++			"org.cadixdev.atlas.", "org.cadixdev.bombe.", "org.cadixdev.lorenz."
++	);
++
++	@Override
++	public String name() {
++		return "fabric-forge";
++	}
++
++	@Override
++	public EnumSet<Phase> handlesClass(final Type classType, final boolean isEmpty) {
++		return EnumSet.noneOf(Phase.class);
++	}
++
++	@Override
++	public boolean processClass(final Phase phase, final ClassNode classNode, final Type classType) {
++		return false;
++	}
++
++	@Override
++	public void initializeLaunch(final ITransformerLoader transformerLoader, final Path[] specialPaths) {
++		for (final String mixinConfig : FabricForge.mixinConfigs) {
++			Mixins.addConfiguration(mixinConfig);
++		}
++
++		// hacks r us
++		for (final Field field : transformerLoader.getClass().getDeclaredFields()) {
++			if (field.getType().getName().equals("cpw.mods.modlauncher.TransformingClassLoader")) {
++				field.setAccessible(true);
++
++				try {
++					final TransformingClassLoader classLoader = (TransformingClassLoader) field.get(transformerLoader);
++
++					for (final String pkg : EXCLUDED_PACKAGES) {
++						classLoader.addTargetPackageFilter(klass -> !klass.startsWith(pkg));
++					}
++				}
++				catch (final IllegalAccessException ex) {
++					log.error("Failed to hack into TransformingClassLoader", ex);
++				}
++			}
++		}
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/launch/FabricForgeTransformationService.java b/src/main/java/org/neptunepowered/fabric/fml/launch/FabricForgeTransformationService.java
+new file mode 100644
+index 0000000..b9b83bd
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/launch/FabricForgeTransformationService.java
+@@ -0,0 +1,132 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml.launch;
++
++import cpw.mods.modlauncher.api.IEnvironment;
++import cpw.mods.modlauncher.api.ITransformationService;
++import cpw.mods.modlauncher.api.ITransformer;
++import cpw.mods.modlauncher.api.IncompatibleEnvironmentException;
++import net.fabricmc.api.EnvType;
++import net.fabricmc.loader.launch.common.FabricLauncherBase;
++import net.minecraftforge.fml.common.thread.EffectiveSide;
++import org.neptunepowered.fabric.fml.FabricForge;
++import org.neptunepowered.fabric.fml.launch.transformer.BrandingTransformer;
++
++import javax.annotation.Nonnull;
++import java.io.IOException;
++import java.io.InputStream;
++import java.net.URL;
++import java.util.Collection;
++import java.util.Collections;
++import java.util.List;
++import java.util.Set;
++
++public class FabricForgeTransformationService
++		extends FabricLauncherBase
++		implements ITransformationService {
++
++	/* Forge */
++
++	@Nonnull
++	@Override
++	public String name() {
++		return "fabric-forge";
++	}
++
++	@Override
++	public void initialize(final IEnvironment environment) {
++	}
++
++	@Override
++	public void beginScanning(final IEnvironment environment) {
++	}
++
++	@Override
++	public void onLoad(final IEnvironment env, final Set<String> otherServices) throws IncompatibleEnvironmentException {
++	}
++
++	@Nonnull
++	@Override
++	public List<ITransformer> transformers() {
++		return Collections.singletonList(new BrandingTransformer());
++	}
++
++	/* Fabric */
++
++	@Override
++	public void propose(final URL url) {
++	}
++
++	@Override
++	public EnvType getEnvironmentType() {
++		return EffectiveSide.get().isClient() ?
++				EnvType.CLIENT :
++				EnvType.SERVER;
++	}
++
++	@Override
++	public boolean isClassLoaded(final String name) {
++		return false;
++	}
++
++	@Override
++	public InputStream getResourceAsStream(final String name) {
++		return null;
++	}
++
++	@Override
++	public ClassLoader getTargetClassLoader() {
++		return FabricForge.currentLoader != null ?
++				FabricForge.currentLoader :
++				Thread.currentThread().getContextClassLoader();
++	}
++
++	@Override
++	public byte[] getClassByteArray(final String name, final boolean runTransformers) throws IOException {
++		return new byte[0];
++	}
++
++	@Override
++	public boolean isDevelopment() {
++		return false;
++	}
++
++	@Override
++	public String getEntrypoint() {
++		return null;
++	}
++
++	@Override
++	public String getTargetNamespace() {
++		return null;
++	}
++
++	@Override
++	public Collection<URL> getLoadTimeDependencies() {
++		return null;
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/launch/IntermediaryToSrgMappingService.java b/src/main/java/org/neptunepowered/fabric/fml/launch/IntermediaryToSrgMappingService.java
+new file mode 100644
+index 0000000..cb894b2
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/launch/IntermediaryToSrgMappingService.java
+@@ -0,0 +1,100 @@
++/*
++ * This file is part of fabric-forge, licensed under the MIT License (MIT).
++ *
++ * Copyright (c) Jamie Mansfield <https://www.jamiemansfield.me/>
++ * Copyright (c) contributors
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++package org.neptunepowered.fabric.fml.launch;
++
++import cpw.mods.modlauncher.api.INameMappingService;
++import org.apache.commons.lang3.tuple.Pair;
++import org.cadixdev.lorenz.model.ClassMapping;
++import org.cadixdev.lorenz.model.FieldMapping;
++import org.cadixdev.lorenz.model.InnerClassMapping;
++import org.cadixdev.lorenz.model.MethodMapping;
++import org.cadixdev.lorenz.model.TopLevelClassMapping;
++import org.neptunepowered.fabric.fml.FabricForge;
++
++import java.util.HashMap;
++import java.util.Map;
++import java.util.function.BiFunction;
++
++public class IntermediaryToSrgMappingService implements INameMappingService {
++
++	private static final Map<String, String> classes = new HashMap<>();
++	private static final Map<String, String> fields = new HashMap<>();
++	private static final Map<String, String> methods = new HashMap<>();
++
++	static {
++		for (final TopLevelClassMapping klass : FabricForge.mappings.getTopLevelClassMappings()) {
++			process(klass);
++		}
++	}
++
++	private static void process(final ClassMapping<?, ?> klass) {
++		classes.put(klass.getFullObfuscatedName(), klass.getFullDeobfuscatedName());
++
++		for (final FieldMapping field : klass.getFieldMappings()) {
++			fields.put(field.getObfuscatedName(), field.getDeobfuscatedName());
++		}
++
++		for (final MethodMapping method : klass.getMethodMappings()) {
++			methods.put(method.getObfuscatedName(), method.getDeobfuscatedName());
++		}
++
++		for (final InnerClassMapping inner : klass.getInnerClassMappings()) {
++			process(inner);
++		}
++	}
++
++	@Override
++	public String mappingName() {
++		return "intermediarytosrg";
++	}
++
++	@Override
++	public String mappingVersion() {
++		return "1.15.2";
++	}
++
++	@Override
++	public Map.Entry<String, String> understanding() {
++		return Pair.of("intermediary", "srg");
++	}
++
++	@Override
++	public BiFunction<Domain, String, String> namingFunction() {
++		return (domain, name) -> {
++			switch (domain) {
++				case CLASS:
++					return classes.computeIfAbsent(name, n -> n);
++				case METHOD:
++					return methods.computeIfAbsent(name, n -> n);
++				case FIELD:
++					return fields.computeIfAbsent(name, n -> n);
++				default:
++					return name;
++			}
++		};
++	}
++
++}
+diff --git a/src/main/java/org/neptunepowered/fabric/fml/launch/transformer/BrandingTransformer.java b/src/main/java/org/neptunepowered/fabric/fml/launch/transformer/BrandingTransformer.java
+new file mode 100644
+index 0000000..157df93
+--- /dev/null
++++ b/src/main/java/org/neptunepowered/fabric/fml/launch/transformer/BrandingTransformer.java
+@@ -0,0 +1,75 @@
++/*
++ * Copyright 2016 FabricMC
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package org.neptunepowered.fabric.fml.launch.transformer;
++
++import cpw.mods.modlauncher.api.ITransformer;
++import cpw.mods.modlauncher.api.ITransformerVotingContext;
++import cpw.mods.modlauncher.api.TransformerVoteResult;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++import org.objectweb.asm.Opcodes;
++import org.objectweb.asm.tree.AbstractInsnNode;
++import org.objectweb.asm.tree.ClassNode;
++import org.objectweb.asm.tree.MethodInsnNode;
++import org.objectweb.asm.tree.MethodNode;
++
++import javax.annotation.Nonnull;
++import java.util.HashSet;
++import java.util.ListIterator;
++import java.util.Set;
++
++public class BrandingTransformer implements ITransformer<ClassNode> {
++
++	private static final Logger log = LogManager.getLogger();
++
++	@Nonnull
++	@Override
++	public ClassNode transform(final ClassNode input, final ITransformerVotingContext context) {
++		for (final MethodNode node : input.methods) {
++			if (node.name.equals("getClientModName") || node.name.equals("getServerModName") && node.desc.endsWith(")Ljava/lang/String;")) {
++				log.debug("Applying brand name hook to " + input.name + "::" + node.name);
++
++				final ListIterator<AbstractInsnNode> it = node.instructions.iterator();
++				while (it.hasNext()) {
++					if (it.next().getOpcode() == Opcodes.ARETURN) {
++						it.previous();
++						it.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/fabricmc/loader/entrypoint/minecraft/hooks/EntrypointBranding", "brand", "(Ljava/lang/String;)Ljava/lang/String;", false));
++						it.next();
++					}
++				}
++			}
++		}
++
++		return input;
++	}
++
++	@Nonnull
++	@Override
++	public TransformerVoteResult castVote(final ITransformerVotingContext context) {
++		return TransformerVoteResult.YES;
++	}
++
++	@Nonnull
++	@Override
++	public Set<Target> targets() {
++		final Set<Target> targets = new HashSet<>();
++		targets.add(Target.targetClass("net.minecraft.client.ClientBrandRetriever"));
++		targets.add(Target.targetClass("net.minecraft.server.MinecraftServer"));
++		return targets;
++	}
++
++}
+diff --git a/src/main/resources/META-INF/services/cpw.mods.modlauncher.api.INameMappingService b/src/main/resources/META-INF/services/cpw.mods.modlauncher.api.INameMappingService
+new file mode 100644
+index 0000000..db02eb1
+--- /dev/null
++++ b/src/main/resources/META-INF/services/cpw.mods.modlauncher.api.INameMappingService
+@@ -0,0 +1 @@
++org.neptunepowered.fabric.fml.launch.IntermediaryToSrgMappingService
+diff --git a/src/main/resources/META-INF/services/cpw.mods.modlauncher.api.ITransformationService b/src/main/resources/META-INF/services/cpw.mods.modlauncher.api.ITransformationService
+new file mode 100644
+index 0000000..726e68b
+--- /dev/null
++++ b/src/main/resources/META-INF/services/cpw.mods.modlauncher.api.ITransformationService
+@@ -0,0 +1 @@
++org.neptunepowered.fabric.fml.launch.FabricForgeTransformationService
+diff --git a/src/main/resources/META-INF/services/cpw.mods.modlauncher.serviceapi.ILaunchPluginService b/src/main/resources/META-INF/services/cpw.mods.modlauncher.serviceapi.ILaunchPluginService
+new file mode 100644
+index 0000000..b907ea5
+--- /dev/null
++++ b/src/main/resources/META-INF/services/cpw.mods.modlauncher.serviceapi.ILaunchPluginService
+@@ -0,0 +1 @@
++org.neptunepowered.fabric.fml.launch.FabricForgeLaunchService
+diff --git a/src/main/resources/META-INF/services/net.minecraftforge.forgespi.language.IModLanguageProvider b/src/main/resources/META-INF/services/net.minecraftforge.forgespi.language.IModLanguageProvider
+new file mode 100644
+index 0000000..fe5189f
+--- /dev/null
++++ b/src/main/resources/META-INF/services/net.minecraftforge.forgespi.language.IModLanguageProvider
+@@ -0,0 +1 @@
++org.neptunepowered.fabric.fml.language.FabricModLanguageProvider
+diff --git a/src/main/resources/META-INF/services/net.minecraftforge.forgespi.locating.IModLocator b/src/main/resources/META-INF/services/net.minecraftforge.forgespi.locating.IModLocator
+new file mode 100644
+index 0000000..c00b911
+--- /dev/null
++++ b/src/main/resources/META-INF/services/net.minecraftforge.forgespi.locating.IModLocator
+@@ -0,0 +1,3 @@
++org.neptunepowered.fabric.fml.discovery.FabricClasspathLocator
++org.neptunepowered.fabric.fml.discovery.FabricExplodedDirectoryLocator
++org.neptunepowered.fabric.fml.discovery.FabricModsFolderLocator
+diff --git a/src/main/resources/fake_pack.mcmeta b/src/main/resources/fake_pack.mcmeta
+new file mode 100644
+index 0000000..cb0c9e2
+--- /dev/null
++++ b/src/main/resources/fake_pack.mcmeta
+@@ -0,0 +1,6 @@
++{
++  "pack": {
++    "pack_format": 4,
++    "description": "Fabric mod's resources"
++  }
++}
+-- 
+2.26.2
+
