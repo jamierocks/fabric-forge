@@ -1,11 +1,11 @@
-From 6cedd077015b782f8c26391c399699db52580bbf Mon Sep 17 00:00:00 2001
+From 7928b357d58d8bd3ba631a88d0af43fd5b095c80 Mon Sep 17 00:00:00 2001
 From: Jamie Mansfield <jmansfield@cadixdev.org>
 Date: Fri, 19 Jun 2020 18:57:13 +0100
 Subject: [PATCH] Port fabric-textures-v0
 
 
 diff --git a/fabric-textures-v0/build.gradle b/fabric-textures-v0/build.gradle
-index 19083d3..908ddcb 100644
+index 19083d3..435ce0a 100644
 --- a/fabric-textures-v0/build.gradle
 +++ b/fabric-textures-v0/build.gradle
 @@ -2,5 +2,9 @@ archivesBaseName = "fabric-textures-v0"
@@ -13,11 +13,11 @@ index 19083d3..908ddcb 100644
  
  dependencies {
 -	compile project(path: ':fabric-api-base', configuration: 'dev')
-+	compile project(path: ':fabric:fabric-api-base', configuration: 'dev')
++	compile project(':fabric:fabric-api-base')
 +}
 +
 +mixin {
-+	add sourceSets.main, "fabric-textures-v0.refmap.json"
++	add sourceSets.main, "fabric-textures-v0-refmap.json"
  }
 diff --git a/fabric-textures-v0/src/main/java/net/fabricmc/fabric/api/client/texture/DependentSprite.java b/fabric-textures-v0/src/main/java/net/fabricmc/fabric/api/client/texture/DependentSprite.java
 index 3f1b7a7..afc052c 100644

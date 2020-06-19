@@ -1,11 +1,11 @@
-From 8ac07d16dd13ba9d1c957b77dd96eb9a58d5b825 Mon Sep 17 00:00:00 2001
+From 346ad87c24ec493758cf34a1da17f29b1d071dc9 Mon Sep 17 00:00:00 2001
 From: Jamie Mansfield <jmansfield@cadixdev.org>
 Date: Fri, 19 Jun 2020 17:40:39 +0100
 Subject: [PATCH] Port fabric-events-lifecycle-v0
 
 
 diff --git a/fabric-events-lifecycle-v0/build.gradle b/fabric-events-lifecycle-v0/build.gradle
-index 21bb53d..e74cc7d 100644
+index 21bb53d..d6d72ac 100644
 --- a/fabric-events-lifecycle-v0/build.gradle
 +++ b/fabric-events-lifecycle-v0/build.gradle
 @@ -2,5 +2,9 @@ archivesBaseName = "fabric-events-lifecycle-v0"
@@ -13,11 +13,11 @@ index 21bb53d..e74cc7d 100644
  
  dependencies {
 -	compile project(path: ':fabric-api-base', configuration: 'dev')
-+	compile project(path: ':fabric:fabric-api-base', configuration: 'dev')
++	compile project(':fabric:fabric-api-base')
 +}
 +
 +mixin {
-+	add sourceSets.main, "fabric-events-lifecycle-v0.refmap.json"
++	add sourceSets.main, "fabric-events-lifecycle-v0-refmap.json"
  }
 diff --git a/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/client/ClientTickCallback.java b/fabric-events-lifecycle-v0/src/main/java/net/fabricmc/fabric/api/event/client/ClientTickCallback.java
 index 653ed4f..ae09bf8 100644

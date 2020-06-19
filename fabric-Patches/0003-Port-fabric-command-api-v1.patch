@@ -1,11 +1,11 @@
-From 50c56c988e9aff1cb4d4d74a471be84872e5bcdb Mon Sep 17 00:00:00 2001
+From 01f6391697398d56b395e1624efea591955d32b6 Mon Sep 17 00:00:00 2001
 From: Jamie Mansfield <jmansfield@cadixdev.org>
 Date: Wed, 17 Jun 2020 13:49:11 +0100
 Subject: [PATCH] Port fabric-command-api-v1
 
 
 diff --git a/fabric-command-api-v1/build.gradle b/fabric-command-api-v1/build.gradle
-index 476565e..e4dec2b 100644
+index 476565e..8715ca5 100644
 --- a/fabric-command-api-v1/build.gradle
 +++ b/fabric-command-api-v1/build.gradle
 @@ -2,7 +2,5 @@ archivesBaseName = "fabric-command-api-v1"
@@ -15,7 +15,7 @@ index 476565e..e4dec2b 100644
 -	compile project(path: ':fabric-api-base', configuration: 'dev')
 -
 -	testmodCompile project(path: ':fabric-events-lifecycle-v0', configuration: 'dev')
-+	compile project(path: ':fabric:fabric-api-base', configuration: 'dev')
++	compile project(':fabric:fabric-api-base')
  }
 diff --git a/fabric-command-api-v1/src/main/java/net/fabricmc/fabric/api/command/v1/CommandRegistrationCallback.java b/fabric-command-api-v1/src/main/java/net/fabricmc/fabric/api/command/v1/CommandRegistrationCallback.java
 index 6cc3ea2..c953d05 100644
