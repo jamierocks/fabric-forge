@@ -1,4 +1,4 @@
-From 32ebfd87ef1b9705fc071d771e25ba0049356d10 Mon Sep 17 00:00:00 2001
+From 95ec2801882e4b895a62e98d13317e8ecf5af0a8 Mon Sep 17 00:00:00 2001
 From: Jamie Mansfield <jmansfield@cadixdev.org>
 Date: Wed, 17 Jun 2020 13:59:35 +0100
 Subject: [PATCH] Add FML Launcher
@@ -129,10 +129,10 @@ index 0000000..77eb14d
 +}
 diff --git a/src/main/java/org/neptunepowered/fabric/fml/FabricModContainer.java b/src/main/java/org/neptunepowered/fabric/fml/FabricModContainer.java
 new file mode 100644
-index 0000000..995a33a
+index 0000000..564cea1
 --- /dev/null
 +++ b/src/main/java/org/neptunepowered/fabric/fml/FabricModContainer.java
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,205 @@
 +/*
 + * This file is part of fabric-forge, licensed under the MIT License (MIT).
 + *
@@ -177,6 +177,7 @@ index 0000000..995a33a
 +import org.apache.logging.log4j.Logger;
 +
 +import java.nio.file.Path;
++import java.util.Map;
 +
 +public class FabricModContainer
 +		extends net.minecraftforge.fml.ModContainer
@@ -204,6 +205,32 @@ index 0000000..995a33a
 +		this.rootPath = FMLLoader.getLoadingModList().getModFileById(this.modId).getFile().findResource("/");
 +
 +		this.triggerMap.put(ModLoadingStage.CONSTRUCT, this::constructMod);
++
++		// Find new-style entrypoint registrations
++		for (final Map.Entry<String, String> definition : this.metadata.getLanguageAdapterDefinitions().entrySet()) {
++			if (FabricForge.adapterMap.containsKey(definition.getKey())) {
++				log.error("%s attempted to register a duplicate entrypoint definition {} ({}) which has already been registered as {}",
++						definition.getKey(), definition.getValue(), FabricForge.adapterMap.get(definition.getValue()));
++				continue;
++			}
++
++			log.debug("Registering entrypoint definition {} ({})", definition.getKey(), definition.getValue());
++
++			try {
++				final Class<?> adapterClass = Class.forName(
++						definition.getValue(),
++						true,
++						this.modClassLoader
++
++				);
++				final LanguageAdapter adapter = (LanguageAdapter) adapterClass.newInstance();
++
++				FabricForge.adapterMap.put(definition.getKey(), adapter);
++			}
++			catch (final ClassNotFoundException | InstantiationException | IllegalAccessException ex) {
++				log.error("Failed to register entrypoint {} ({})", definition.getKey(), definition.getValue(), ex);
++			}
++		}
 +	}
 +
 +	private void constructMod(final LifecycleEventProvider.LifecycleEvent event) {
@@ -313,7 +340,7 @@ index 0000000..995a33a
 +}
 diff --git a/src/main/java/org/neptunepowered/fabric/fml/ForgeGameProvider.java b/src/main/java/org/neptunepowered/fabric/fml/ForgeGameProvider.java
 new file mode 100644
-index 0000000..0c22909
+index 0000000..cc5c51f
 --- /dev/null
 +++ b/src/main/java/org/neptunepowered/fabric/fml/ForgeGameProvider.java
 @@ -0,0 +1,108 @@
@@ -368,12 +395,12 @@ index 0000000..0c22909
 +
 +	@Override
 +	public String getRawGameVersion() {
-+		return null;
++		return "1.15.2";
 +	}
 +
 +	@Override
 +	public String getNormalizedGameVersion() {
-+		return null;
++		return "1.15.2";
 +	}
 +
 +	@Override
