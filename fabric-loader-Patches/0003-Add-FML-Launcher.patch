@@ -1,4 +1,4 @@
-From 95ec2801882e4b895a62e98d13317e8ecf5af0a8 Mon Sep 17 00:00:00 2001
+From 6ef1c7a507a21b6834107619dcc3ce676b7c6ede Mon Sep 17 00:00:00 2001
 From: Jamie Mansfield <jmansfield@cadixdev.org>
 Date: Wed, 17 Jun 2020 13:59:35 +0100
 Subject: [PATCH] Add FML Launcher
@@ -715,10 +715,10 @@ index 0000000..f82f0a5
 +}
 diff --git a/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricModsFolderLocator.java b/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricModsFolderLocator.java
 new file mode 100644
-index 0000000..8ed1981
+index 0000000..e1a548b
 --- /dev/null
 +++ b/src/main/java/org/neptunepowered/fabric/fml/discovery/FabricModsFolderLocator.java
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,207 @@
 +/*
 + * This file is part of fabric-forge, licensed under the MIT License (MIT).
 + *
@@ -748,6 +748,7 @@ index 0000000..8ed1981
 +
 +import static net.minecraftforge.fml.loading.LogMarkers.SCAN;
 +
++import com.google.common.collect.Sets;
 +import com.google.gson.JsonElement;
 +import com.google.gson.JsonObject;
 +import com.google.gson.JsonParser;
@@ -764,6 +765,7 @@ index 0000000..8ed1981
 +import org.apache.logging.log4j.LogManager;
 +import org.apache.logging.log4j.Logger;
 +import org.cadixdev.atlas.Atlas;
++import org.cadixdev.atlas.jar.JarFile;
 +import org.cadixdev.bombe.asm.jar.JarEntryRemappingTransformer;
 +import org.cadixdev.lorenz.asm.LorenzRemapper;
 +import org.neptunepowered.fabric.fml.FabricForge;
@@ -777,6 +779,7 @@ index 0000000..8ed1981
 +import java.nio.file.FileSystem;
 +import java.nio.file.Files;
 +import java.nio.file.Path;
++import java.nio.file.Paths;
 +import java.nio.file.StandardCopyOption;
 +import java.util.ArrayList;
 +import java.util.Comparator;
@@ -866,8 +869,15 @@ index 0000000..8ed1981
 +					FabricForge.mappings,
 +					ctx.inheritanceProvider()
 +			)));
-+			atlas.install(ctx -> new MixinRefmapTransformer(mixinRefmaps, FabricForge.mappings, "searge"));
-+			atlas.run(mod, tempPath);
++
++			try (final JarFile jar = new JarFile(mod)) {
++				atlas.install(ctx -> new MixinRefmapTransformer(
++						ctx.inheritanceProvider(), jar,
++						mixinRefmaps, FabricForge.mappings, "searge"
++				));
++
++				atlas.run(jar, tempPath);
++			}
 +		}
 +		log.info(tempPath);
 +
@@ -918,10 +928,10 @@ index 0000000..8ed1981
 +}
 diff --git a/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRefmapTransformer.java b/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRefmapTransformer.java
 new file mode 100644
-index 0000000..0b3ee35
+index 0000000..9040172
 --- /dev/null
 +++ b/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRefmapTransformer.java
-@@ -0,0 +1,125 @@
+@@ -0,0 +1,224 @@
 +/*
 + * This file is part of fabric-forge, licensed under the MIT License (MIT).
 + *
@@ -957,15 +967,27 @@ index 0000000..0b3ee35
 +import com.google.gson.JsonPrimitive;
 +import org.apache.logging.log4j.LogManager;
 +import org.apache.logging.log4j.Logger;
++import org.cadixdev.atlas.jar.JarFile;
++import org.cadixdev.bombe.analysis.InheritanceProvider;
++import org.cadixdev.bombe.asm.jar.ClassProvider;
 +import org.cadixdev.bombe.jar.JarEntryTransformer;
 +import org.cadixdev.bombe.jar.JarResourceEntry;
++import org.cadixdev.bombe.type.FieldType;
++import org.cadixdev.bombe.type.signature.FieldSignature;
 +import org.cadixdev.bombe.type.signature.MethodSignature;
 +import org.cadixdev.lorenz.MappingSet;
 +import org.cadixdev.lorenz.model.ClassMapping;
++import org.cadixdev.lorenz.model.FieldMapping;
++import org.cadixdev.lorenz.model.MethodMapping;
++import org.objectweb.asm.Type;
++import org.objectweb.asm.tree.AnnotationNode;
++import org.objectweb.asm.tree.ClassNode;
 +
 +import java.io.ByteArrayInputStream;
-+import java.io.IOException;
 +import java.io.InputStreamReader;
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.List;
 +import java.util.Map;
 +import java.util.Set;
 +
@@ -977,11 +999,16 @@ index 0000000..0b3ee35
 +			.setPrettyPrinting()
 +			.create();
 +
++	private final InheritanceProvider inheritanceProvider;
++	private final ClassProvider provider;
 +	private final Set<String> refmaps;
 +	private final MappingSet mappings;
 +	private final String name;
 +
-+	public MixinRefmapTransformer(final Set<String> refmaps, final MappingSet mappings, final String name) {
++	public MixinRefmapTransformer(final InheritanceProvider inheritanceProvider, final ClassProvider provider,
++								  final Set<String> refmaps, final MappingSet mappings, final String name) {
++		this.inheritanceProvider = inheritanceProvider;
++		this.provider = provider;
 +		this.refmaps = refmaps;
 +		this.mappings = mappings;
 +		this.name = name;
@@ -1016,18 +1043,99 @@ index 0000000..0b3ee35
 +					}
 +					// LType;methodNamedescriptor
 +					else {
-+						final int classEnd = obf.indexOf(';');
-+						final String owner = obf.substring(1, classEnd);
-+						final MethodSignature signature = MethodSignature.of(obf.substring(classEnd + 1));
++						final String owner;
++						final String sigRaw;
 +
-+						this.mappings.computeClassMapping(owner).ifPresent(klass -> {
-+							klass.getMethodMapping(signature).ifPresent(method -> {
-+								final String deobf = "L" + klass.getFullDeobfuscatedName() + ";" +
-+										method.getDeobfuscatedSignature().toJvmsIdentifier();
++						// it has the LType;
++						if (obf.startsWith("L")) {
++							final int classEnd = obf.indexOf(';');
++							owner = obf.substring(1, classEnd);
++							sigRaw = obf.substring(classEnd + 1);
++						}
++						// find from the mixin itself
++						else {
++							final String mixinClass = mapping.getKey();
++							final ClassNode mixinNode = this.provider.getAsNode(mixinClass);
 +
-+								mixinMapping.setValue(new JsonPrimitive(deobf));
-+							});
-+						});
++							if (mixinNode.invisibleAnnotations == null) {
++								log.error("Refmap references invalid Mixin {}", mixinClass);
++								return entry;
++							}
++
++							final List<String> targetClasses = new ArrayList<>();
++							for (final AnnotationNode annotation : mixinNode.invisibleAnnotations) {
++								if (!"Lorg/spongepowered/asm/mixin/Mixin;".equals(annotation.desc)) continue;
++
++								for (int i = 0; i < annotation.values.size(); i++) {
++									final String key = (String) annotation.values.get(i);
++									final Object value = annotation.values.get(++i);
++
++									if ("value".equals(key)) {
++										for (final Type targetType : (List<Type>) value) {
++											targetClasses.add(targetType.getClassName());
++										}
++									}
++									else if ("targets".equals(key)) {
++										for (final String targetType : (List<String>) value) {
++											targetClasses.add(targetType);
++										}
++									}
++								}
++							}
++							log.info("Found target classes {} for {}", targetClasses, mixinClass);
++
++							if (targetClasses.size() == 0) {
++								log.error("Found no target classes for {}", mixinClass);
++								return entry;
++							}
++
++							owner = targetClasses.get(0);
++							sigRaw = obf;
++						}
++
++						// handle fields
++						if (sigRaw.contains(":")) {
++							final String[] parts = sigRaw.split(":");
++							final FieldSignature signature = FieldSignature.of(parts[0], parts[1]);
++
++							final ClassMapping<?, ?> klass = this.mappings.getOrCreateClassMapping(owner);
++							klass.complete(this.inheritanceProvider);
++
++							final FieldSignature deobfSignature = klass.computeFieldMapping(signature)
++									.map(FieldMapping::getDeobfuscatedSignature)
++									.orElseGet(() -> new FieldSignature(
++											signature.getName(),
++											signature.getType().isPresent() ?
++													this.mappings.deobfuscate(signature.getType().get()) :
++													null
++									));
++
++							String deobf = "L" + klass.getFullDeobfuscatedName() + ";" +
++									deobfSignature.getName();
++							if (deobfSignature.getType().isPresent()) {
++								deobf += ":" + deobfSignature.getType().get();
++							}
++
++							mixinMapping.setValue(new JsonPrimitive(deobf));
++						}
++						else {
++							final MethodSignature signature = MethodSignature.of(sigRaw);
++
++							final ClassMapping<?, ?> klass = this.mappings.getOrCreateClassMapping(owner);
++							klass.complete(this.inheritanceProvider);
++
++							final MethodSignature deobfSignature = klass.getMethodMapping(signature)
++									.map(MethodMapping::getDeobfuscatedSignature)
++									.orElseGet(() -> new MethodSignature(
++											signature.getName(),
++											this.mappings.deobfuscate(signature.getDescriptor())
++									));
++
++							final String deobf = "L" + klass.getFullDeobfuscatedName() + ";" +
++									deobfSignature.toJvmsIdentifier();
++
++							mixinMapping.setValue(new JsonPrimitive(deobf));
++						}
 +					}
 +				}
 +			}
@@ -1040,7 +1148,8 @@ index 0000000..0b3ee35
 +					GSON.toJson(refmap).getBytes()
 +			);
 +		}
-+		catch (final IOException ignored) {
++		catch (final Exception ex) {
++			log.error("major", ex);
 +		}
 +
 +		return entry;
@@ -1049,10 +1158,10 @@ index 0000000..0b3ee35
 +}
 diff --git a/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRemappingTransformer.java b/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRemappingTransformer.java
 new file mode 100644
-index 0000000..c391b01
+index 0000000..73105e8
 --- /dev/null
 +++ b/src/main/java/org/neptunepowered/fabric/fml/discovery/mixin/MixinRemappingTransformer.java
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,137 @@
 +/*
 + * This file is part of fabric-forge, licensed under the MIT License (MIT).
 + *
@@ -1122,12 +1231,12 @@ index 0000000..c391b01
 +
 +					if ("value".equals(key)) {
 +						for (final Type targetType : (List<Type>) value) {
-+							this.mappings.computeClassMapping(targetType.getClassName()).ifPresent(targetClasses::add);
++							targetClasses.add(this.mappings.getOrCreateClassMapping(targetType.getClassName()));
 +						}
 +					}
 +					else if ("targets".equals(key)) {
 +						for (final String targetType : (List<String>) value) {
-+							this.mappings.computeClassMapping(targetType).ifPresent(targetClasses::add);
++							targetClasses.add(this.mappings.getOrCreateClassMapping(targetType));
 +						}
 +					}
 +				}
@@ -1138,7 +1247,10 @@ index 0000000..c391b01
 +					if (method.visibleAnnotations == null) continue;
 +
 +					for (final AnnotationNode annotation : method.visibleAnnotations) {
-+						if (!"Lorg/spongepowered/asm/mixin/Shadow;".equals(annotation.desc)) continue;
++						if (!"Lorg/spongepowered/asm/mixin/Shadow;".equals(annotation.desc) &&
++								!"Lorg/spongepowered/asm/mixin/Overwrite;".equals(annotation.desc)) {
++							continue;
++						}
 +
 +						getMethodMapping(targetClasses, method).ifPresent(methodMapping -> {
 +							this.mappings.getOrCreateClassMapping(node.name)
